@@ -1,0 +1,8 @@
+{
+  "name": "VendaFácil",
+  "description": "Plataforma SaaS moderna e mobile-first para gestão de vendas, stock, caixa, clientes, despesas e análise por IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
