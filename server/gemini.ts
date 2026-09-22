@@ -38,6 +38,171 @@ export interface BusinessDataSummary {
   expensesByCategory: Record<string, number>;
 }
 
+function isTransientOrDemandError(err: any): boolean {
+  if (!err) return false;
+  const msg = (err.message || String(err)).toLowerCase();
+  const code = err.status || err.code || err.statusCode;
+  return (
+    code === 503 ||
+    code === 429 ||
+    code === 500 ||
+    msg.includes('503') ||
+    msg.includes('high demand') ||
+    msg.includes('unavailable') ||
+    msg.includes('spikes in demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('resource has been exhausted') ||
+    msg.includes('rate limit') ||
+    msg.includes('too many requests')
+  );
+}
+
+export function extractHeuristicallyFromTranscript(
+  transcript?: string,
+  existingCategories: string[] = []
+): ExtractedProductAiResult {
+  if (!transcript || !transcript.trim()) {
+    return {
+      name: 'Novo Produto',
+      costPrice: 0,
+      salePrice: 0,
+      currentStock: 1,
+      minStock: 5,
+      unit: 'un',
+      confidenceNotes: 'Preenchimento padrão. O servidor de IA estava sob alta demanda temporária.',
+    };
+  }
+
+  const text = transcript.trim();
+  let name = '';
+  let categoryName = '';
+  let costPrice = 0;
+  let salePrice = 0;
+  let currentStock = 1;
+  let minStock = 5;
+  let unit = 'un';
+  let expirationDate: string | undefined = undefined;
+  let barcode: string | undefined = undefined;
+
+  const parseNum = (val: string): number => {
+    if (!val) return 0;
+    let clean = val.replace(/[^\d,\.]/g, '').trim();
+    if (clean.includes('.') && clean.includes(',')) {
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes('.')) {
+      const parts = clean.split('.');
+      if (parts[1] && parts[1].length === 3) {
+        clean = parts.join('');
+      }
+    } else if (clean.includes(',')) {
+      clean = clean.replace(',', '.');
+    }
+    return parseFloat(clean) || 0;
+  };
+
+  // 1. Cost Price (comprei a..., custo..., paguei...)
+  const costMatch = text.match(/(?:comprei(?:\s+a)?|custo(?:\s*(?:de|é|foi)?)?|preço\s+de\s+custo|preço\s+de\s+compra|paguei)\s*(?:de)?\s*([0-9\.\s,]+?)(?:\s*(?:kz|kwanzas|kzs|e\s+vou|e\s+vender|,|\.|$))/i);
+  if (costMatch && costMatch[1]) {
+    costPrice = parseNum(costMatch[1]);
+  }
+
+  // 2. Sale Price (vender a..., venda..., preço de venda...)
+  const saleMatch = text.match(/(?:vender(?:\s+a)?|vou\s+vender(?:\s+a)?|venda(?:\s*(?:de|é|a)?)?|preço\s+de\s+venda)\s*(?:de)?\s*([0-9\.\s,]+?)(?:\s*(?:kz|kwanzas|kzs|,|\.|$|tenho))/i);
+  if (saleMatch && saleMatch[1]) {
+    salePrice = parseNum(saleMatch[1]);
+  }
+
+  // 3. Current Stock
+  const stockMatch = text.match(/(?:tenho|stock\s*(?:actual|atual)?(?:\s*de)?|quantidade(?:\s*de)?)\s*([0-9]+)\s*(latas?|garrafas?|caixas?|pacotes?|unidades?|un|fardos?|sacos?|kg|litros?)?/i);
+  if (stockMatch && stockMatch[1]) {
+    currentStock = parseInt(stockMatch[1], 10) || 1;
+    if (stockMatch[2]) {
+      const rawUnit = stockMatch[2].toLowerCase();
+      if (rawUnit.startsWith('lata')) unit = 'un';
+      else if (rawUnit.startsWith('garrafa')) unit = 'un';
+      else if (rawUnit.startsWith('caixa')) unit = 'cx';
+      else if (rawUnit.startsWith('pacote')) unit = 'pct';
+      else if (rawUnit.startsWith('fardo')) unit = 'fardo';
+      else if (rawUnit.startsWith('kg')) unit = 'kg';
+      else if (rawUnit.startsWith('litro')) unit = 'l';
+    }
+  }
+
+  // 4. Min stock
+  const minMatch = text.match(/(?:m[íi]nimo|limite(?:\s*m[íi]nimo)?|alerta(?:\s*de)?)\s*(?:de)?\s*([0-9]+)/i);
+  if (minMatch && minMatch[1]) {
+    minStock = parseInt(minMatch[1], 10) || 5;
+  }
+
+  // 5. Expiration date
+  const expIsoMatch = text.match(/\b(202[4-9]|203[0-9])[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12][0-9]|3[01])\b/);
+  const expPtMatch = text.match(/\b(0?[1-9]|[12][0-9]|3[01])[-/](0?[1-9]|1[0-2])[-/](202[4-9]|203[0-9])\b/);
+  const expTextMatch = text.match(/validade\s*(?:(?:é|de|em|até)\s*)?([0-9]{1,2})\s*(?:de)?\s*([a-zçãé]+)\s*(?:de)?\s*(202[4-9]|203[0-9])/i);
+
+  if (expIsoMatch) {
+    expirationDate = `${expIsoMatch[1]}-${expIsoMatch[2].padStart(2, '0')}-${expIsoMatch[3].padStart(2, '0')}`;
+  } else if (expPtMatch) {
+    expirationDate = `${expPtMatch[3]}-${expPtMatch[2].padStart(2, '0')}-${expPtMatch[1].padStart(2, '0')}`;
+  } else if (expTextMatch) {
+    const day = expTextMatch[1].padStart(2, '0');
+    const monthName = expTextMatch[2].toLowerCase();
+    const year = expTextMatch[3];
+    const monthsMap: Record<string, string> = {
+      janeiro: '01', fevereiro: '02', marco: '03', março: '03',
+      abril: '04', maio: '05', junho: '06', julho: '07',
+      agosto: '08', setembro: '09', outubro: '10', novembro: '11', dezembro: '12'
+    };
+    const month = monthsMap[monthName] || '12';
+    expirationDate = `${year}-${month}-${day}`;
+  }
+
+  // 6. Category
+  const catMatch = text.match(/categoria\s*(?:de|é)?\s*([a-zA-ZÀ-ÿ\s]+?)(?:,|\.|\s+comprei|\s+custo|\s+vender|\s+tenho|$)/i);
+  if (catMatch && catMatch[1]) {
+    categoryName = catMatch[1].trim();
+  } else {
+    for (const cat of existingCategories) {
+      if (text.toLowerCase().includes(cat.toLowerCase())) {
+        categoryName = cat;
+        break;
+      }
+    }
+  }
+
+  // 7. Product Name
+  let cleanText = text
+    .replace(/^(?:cadastrar|registar|adicionar|inserir|novo\s+produto)\s+/i, '')
+    .trim();
+  
+  const cutOffIndex = cleanText.search(/,\s*(?:categoria|comprei|custo|vender|tenho|stock|validade|m[íi]nimo)|(?:\s+categoria\s+)|(?:\s+comprei\s+)/i);
+  if (cutOffIndex > 0) {
+    name = cleanText.substring(0, cutOffIndex).trim();
+  } else {
+    const commaIndex = cleanText.indexOf(',');
+    if (commaIndex > 0 && commaIndex < 50) {
+      name = cleanText.substring(0, commaIndex).trim();
+    } else {
+      name = cleanText.slice(0, 45).trim();
+    }
+  }
+
+  name = name.replace(/^[,\.\s]+|[,\.\s]+$/g, '');
+  if (!name) name = 'Produto Registado';
+
+  return {
+    name,
+    categoryName: categoryName || 'Geral',
+    costPrice,
+    salePrice,
+    currentStock,
+    minStock,
+    unit,
+    expirationDate,
+    barcode,
+    confidenceNotes: 'Dados extraídos diretamente da voz. (Nota: os servidores da IA estavam com alta demanda temporária; confira os valores preenchidos).'
+  };
+}
+
 export async function askBusinessAssistant(
   prompt: string,
   businessSummary: BusinessDataSummary,
@@ -79,21 +244,32 @@ Diretrizes:
 5. Você também é o Guia Especialista de Boas-Vindas do VendaFácil SaaS. Se o utilizador perguntar como usar qualquer função (cadastrar produto, fazer primeira venda no PDV, cadastrar clientes, gerir fiados com WhatsApp, abrir/fechar caixa, relatórios), forneça uma explicação passo a passo acolhedora, clara e prática.
 `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
-      contents: prompt,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-      },
-    });
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  for (const model of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          temperature: 0.7,
+        },
+      });
 
-    return response.text || "Não foi possível obter uma resposta detalhada no momento.";
-  } catch (error) {
-    console.error("Gemini API error:", error);
-    return generateFallbackAnalysis(prompt, businessSummary);
+      if (response.text) {
+        return response.text;
+      }
+    } catch (error: any) {
+      console.warn(`Gemini assistant com ${model} encontrou erro:`, error?.message || error);
+      if (isTransientOrDemandError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        continue;
+      }
+      break;
+    }
   }
+
+  return generateFallbackAnalysis(prompt, businessSummary);
 }
 
 function generateFallbackAnalysis(prompt: string, summary: BusinessDataSummary): string {
@@ -153,3 +329,177 @@ function generateFallbackAnalysis(prompt: string, summary: BusinessDataSummary):
 
   return `🤖 **Análise do Seu Negócio (${summary.companyName}):**\n\n• **Vendas do Mês:** ${summary.totalSalesMonth.toLocaleString('pt-PT')} ${curr}\n• **Lucro Estimado:** ${summary.totalProfitMonth.toLocaleString('pt-PT')} ${curr}\n• **Despesas:** ${summary.totalExpensesMonth.toLocaleString('pt-PT')} ${curr}\n• **Valores a Receber:** ${summary.totalReceivables.toLocaleString('pt-PT')} ${curr}\n• **Produtos em Alerta de Stock:** ${summary.lowStockProducts.length} itens\n\nO seu negócio está ativo e com dados organizados. Como posso ajudar com mais detalhes?`;
 }
+
+export interface ExtractedProductAiResult {
+  name?: string;
+  categoryName?: string;
+  costPrice?: number;
+  salePrice?: number;
+  currentStock?: number;
+  minStock?: number;
+  unit?: string;
+  barcode?: string;
+  expirationDate?: string;
+  description?: string;
+  confidenceNotes?: string;
+}
+
+export async function extractProductFromAudioAndImage(params: {
+  audioBase64?: string;
+  audioMimeType?: string;
+  audioTranscript?: string;
+  imageBase64?: string;
+  imageMimeType?: string;
+  existingCategories?: string[];
+}): Promise<ExtractedProductAiResult> {
+  const ai = getAiClient();
+  const {
+    audioBase64,
+    audioMimeType = 'audio/webm',
+    audioTranscript,
+    imageBase64,
+    imageMimeType = 'image/jpeg',
+    existingCategories = []
+  } = params;
+
+  if (!ai) {
+    // Fallback if no API key
+    return {
+      name: audioTranscript ? audioTranscript.slice(0, 40) : 'Produto Registado por Voz',
+      costPrice: 0,
+      salePrice: 0,
+      currentStock: 1,
+      minStock: 5,
+      unit: 'un',
+      confidenceNotes: 'Chave de API Gemini não configurada no servidor. Por favor configure a GEMINI_API_KEY.',
+    };
+  }
+
+  const promptText = `
+Você é o assistente inteligente de cadastro de inventário do VendaFácil SaaS para pequenos e médios retalhistas em Angola e mercados de língua portuguesa.
+A sua tarefa é extrair com precisão os dados de um novo produto para o catálogo comercial a partir do áudio fornecido (fala do comerciante) e/ou da imagem capturada pela câmara (embalagem, rótulo, preço, data de validade, código de barras).
+
+Categorias existentes na loja: ${existingCategories.length > 0 ? existingCategories.join(', ') : 'Alimentação, Bebidas, Higiene, Beleza, Farmácia, Limpeza, Vestuário, Eletrónicos, Diversos'}.
+
+Campos a extrair organizados:
+1. "name": Nome comercial claro e bem formatado (ex: "Leite Nido 400g", "Óleo alimentar Sol 1L", "Paracetamol 500mg Caixa").
+2. "categoryName": A categoria mais apropriada (escolha uma das existentes ou crie uma categoria curta adequada).
+3. "costPrice": Preço de compra / custo em Kwanzas (apenas número, ex: 1500). Se não mencionado explicitamente, estime proporcionalmente ou deixe 0.
+4. "salePrice": Preço de venda ao público em Kwanzas (apenas número, ex: 2000).
+5. "currentStock": Quantidade física em stock actual (número, padrão 1 se não dito).
+6. "minStock": Stock mínimo para alerta de reposição (número, padrão 5).
+7. "unit": Unidade de medida ("un", "kg", "cx", "pct", "l", etc.).
+8. "expirationDate": Data de validade/vencimento no formato "YYYY-MM-DD" (extraia da foto da embalagem ou da fala do comerciante; ex: "2027-05-30"). Se não for encontrada, retorne null.
+9. "barcode": Código de barras visível no rótulo ou falado (se legível, senão null).
+10. "description": Breve descrição informativa se relevante.
+11. "confidenceNotes": Um resumo curto em português do que foi detetado e o que foi preenchido (ex: "Identificado leite em pó pela foto e preço de venda de 3.500 Kz falado no áudio").
+
+Retorne estritamente um objeto JSON com as chaves:
+{
+  "name": string,
+  "categoryName": string,
+  "costPrice": number,
+  "salePrice": number,
+  "currentStock": number,
+  "minStock": number,
+  "unit": string,
+  "expirationDate": string | null,
+  "barcode": string | null,
+  "description": string,
+  "confidenceNotes": string
+}
+`;
+
+  const parts: any[] = [{ text: promptText }];
+
+  if (audioTranscript) {
+    parts.push({ text: `Transcrição preliminar da fala: "${audioTranscript}"` });
+  }
+
+  if (audioBase64) {
+    const cleanAudio = audioBase64.replace(/^data:audio\/[a-z0-9-+.]+;base64,/, '');
+    parts.push({
+      inlineData: {
+        mimeType: audioMimeType,
+        data: cleanAudio,
+      },
+    });
+  }
+
+  if (imageBase64) {
+    const cleanImg = imageBase64.replace(/^data:image\/[a-z0-9-+.]+;base64,/, '');
+    parts.push({
+      inlineData: {
+        mimeType: imageMimeType,
+        data: cleanImg,
+      },
+    });
+  }
+
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  let lastError: any = null;
+
+  for (const model of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: { parts },
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      });
+
+      const text = response.text || "{}";
+      const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
+      const parsed = JSON.parse(cleaned);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Erro ao extrair produto com modelo ${model}:`, err?.message || err);
+
+      if (isTransientOrDemandError(err)) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        continue;
+      }
+
+      // If audio payload caused an issue, try without raw audio
+      if (audioBase64 && (audioTranscript || imageBase64)) {
+        try {
+          const simplifiedParts: any[] = [{ text: promptText }];
+          if (audioTranscript) simplifiedParts.push({ text: `Transcrição da fala: "${audioTranscript}"` });
+          if (imageBase64) {
+            const cleanImg = imageBase64.replace(/^data:image\/[a-z0-9-+.]+;base64,/, '');
+            simplifiedParts.push({ inlineData: { mimeType: imageMimeType, data: cleanImg } });
+          }
+          const simplifiedResponse = await ai.models.generateContent({
+            model: 'gemini-3.1-flash-lite',
+            contents: { parts: simplifiedParts },
+            config: { responseMimeType: "application/json", temperature: 0.2 }
+          });
+          const text = simplifiedResponse.text || "{}";
+          const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*$/gi, '').trim();
+          const parsed = JSON.parse(cleaned);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        } catch (innerErr) {
+          console.warn('Tentativa com partes simplificadas falhou:', innerErr);
+        }
+      }
+    }
+  }
+
+  // If all models failed (e.g. 503 high demand across models or network outage),
+  // seamlessly use heuristic extraction from transcript so user is not blocked!
+  if (audioTranscript && audioTranscript.trim()) {
+    console.warn("Utilizando extração heurística por voz devido a indisponibilidade temporária dos servidores da IA.");
+    return extractHeuristicallyFromTranscript(audioTranscript, existingCategories);
+  }
+
+  console.error("Erro ao extrair produto via Gemini após tentar modelos alternativos:", lastError);
+  throw new Error(`Falha temporária no reconhecimento por IA (servidores com alta procura). Por favor tente novamente dentro de instantes.`);
+}
+

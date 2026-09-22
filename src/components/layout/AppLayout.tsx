@@ -22,7 +22,8 @@ import {
   RefreshCw,
   Sliders,
   DollarSign,
-  Compass
+  Compass,
+  Cloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../../context/AuthContext.js';
@@ -81,6 +82,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       ia: ['ia', 'ai'],
       funcionarios: ['funcionarios', 'employees'],
       empresa: ['empresa', 'company'],
+      backup: ['backup', 'backups', 'drive'],
       planos: ['planos', 'subscriptions'],
       admin: ['admin', 'superadmin'],
       notificacoes: ['notificacoes', 'notifications'],
@@ -114,6 +116,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       { id: 'ia', label: 'Assistente IA 🤖', icon: Sparkles, badge: 'IA' },
       { id: 'funcionarios', label: 'Funcionários & Acessos', icon: UserCheck },
       { id: 'empresa', label: 'Minha Empresa', icon: Building2 },
+      { id: 'backup', label: 'Backups & Google Drive', icon: Cloud, badge: 'Nuvem' },
       { id: 'planos', label: 'Planos & Assinatura', icon: Sliders },
       ...(user?.isSuperAdmin ? [{ id: 'admin', label: 'Painel SaaS Admin', icon: ShieldCheck, isSuper: true }] : []),
     ]}

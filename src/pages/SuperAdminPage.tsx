@@ -33,11 +33,13 @@ import {
   Trash2,
   HardDrive,
   FileJson,
-  Check
+  Check,
+  Cloud
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
+import { signInWithGoogleForDrive, uploadBackupToGoogleDrive } from '../lib/googleDriveService.js';
 
 export const SuperAdminPage: React.FC = () => {
   const { user, switchCompany } = useAuth();
@@ -202,6 +204,25 @@ export const SuperAdminPage: React.FC = () => {
       error('Erro ao exportar cópia de segurança');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const [isDriveBackingUp, setIsDriveBackingUp] = useState(false);
+
+  const handleBackupToGoogleDrive = async () => {
+    try {
+      setIsDriveBackingUp(true);
+      const authRes = await signInWithGoogleForDrive();
+      const data = await api.exportAdminBackup();
+      const driveResult = await uploadBackupToGoogleDrive(authRes.accessToken, data, 'VendaFacil_Master_SaaS');
+      success(`Cópia mestra enviada com sucesso para o Google Drive de ${authRes.user.email}!`);
+      if (driveResult.webViewLink) {
+        window.open(driveResult.webViewLink, '_blank');
+      }
+    } catch (e: any) {
+      error(e.message || 'Erro ao sincronizar backup com o Google Drive');
+    } finally {
+      setIsDriveBackingUp(false);
     }
   };
 
@@ -906,15 +927,25 @@ export const SuperAdminPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-5 mt-4 border-t border-slate-100">
+              <div className="pt-5 mt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-2.5">
                 <button
                   type="button"
                   onClick={handleExportBackup}
-                  disabled={isExporting}
-                  className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  disabled={isExporting || isDriveBackingUp}
+                  className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isExporting ? 'A gerar ficheiro...' : 'Descarregar Ficheiro de Backup (.json)'}</span>
+                  <span>{isExporting ? 'A gerar ficheiro...' : 'Descarregar .json'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBackupToGoogleDrive}
+                  disabled={isExporting || isDriveBackingUp}
+                  className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>{isDriveBackingUp ? 'A enviar...' : 'Salvar no Drive'}</span>
                 </button>
               </div>
             </div>

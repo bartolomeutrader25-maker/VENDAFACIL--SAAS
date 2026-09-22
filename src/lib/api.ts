@@ -50,6 +50,8 @@ export const api = {
   getCompany: () => apiRequest('/company'),
   updateCompany: (body: any) => apiRequest('/company', { method: 'PUT', body: JSON.stringify(body) }),
   updateCompanyProfile: (body: any) => apiRequest('/company', { method: 'PUT', body: JSON.stringify(body) }),
+  exportCompanyBackup: () => apiRequest('/company/backup/export'),
+  getCompanyBackupSummary: () => apiRequest('/company/backup/summary'),
 
   // Dashboard
   getDashboard: () => apiRequest('/dashboard'),
@@ -59,6 +61,13 @@ export const api = {
   createProduct: (body: any) => apiRequest('/products', { method: 'POST', body: JSON.stringify(body) }),
   updateProduct: (id: string, body: any) => apiRequest(`/products/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteProduct: (id: string) => apiRequest(`/products/${id}`, { method: 'DELETE' }),
+  extractProductWithAi: (data: {
+    audioBase64?: string;
+    audioMimeType?: string;
+    audioTranscript?: string;
+    imageBase64?: string;
+    imageMimeType?: string;
+  }) => apiRequest('/products/ai-extract', { method: 'POST', body: JSON.stringify(data) }),
 
   getCategories: () => apiRequest('/categories'),
   createCategory: (body: any) => apiRequest('/categories', { method: 'POST', body: JSON.stringify(body) }),

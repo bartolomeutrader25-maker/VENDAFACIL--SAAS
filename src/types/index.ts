@@ -75,6 +75,7 @@ export interface Product {
   stockQuantity?: number; // Alias for currentStock
   minStock: number;
   unit: string; // 'un', 'kg', 'cx', 'pct', 'l'
+  expirationDate?: string; // Data de Vencimento / Validade (YYYY-MM-DD)
   isActive: boolean;
   createdAt: string;
 }

@@ -15,7 +15,9 @@ import {
   Receipt,
   RotateCcw,
   Sparkles,
-  ShoppingBag
+  ShoppingBag,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -26,6 +28,8 @@ import { useToast } from '../context/ToastContext.js';
 import { ReceiptModal } from '../components/common/ReceiptModal.js';
 import { BarcodeScannerModal } from '../components/common/BarcodeScannerModal.js';
 import { ProductThumbnail } from '../components/common/ProductThumbnail.js';
+import { PosSoundSettingsModal } from '../components/common/PosSoundSettingsModal.js';
+import { posAudio } from '../lib/posAudio.js';
 
 interface CartItem {
   product: Product;
@@ -34,7 +38,7 @@ interface CartItem {
 
 export const PosSalePage: React.FC = () => {
   const { company, user } = useAuth();
-  const { success, error, warning } = useToast();
+  const { success, error, warning, info } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -53,7 +57,11 @@ export const PosSalePage: React.FC = () => {
   // Modals & Flow
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [lastSale, setLastSale] = useState<Sale | null>(null);
+  const [isLoadingLastSale, setIsLoadingLastSale] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isSoundSettingsOpen, setIsSoundSettingsOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => posAudio.getSettings().enabled);
   const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
@@ -83,6 +91,37 @@ export const PosSalePage: React.FC = () => {
     loadData();
   }, []);
 
+  const activeReceiptCustomer = useMemo(() => {
+    if (!completedSale) return null;
+    return customers.find(
+      (c) =>
+        c.id === completedSale.customerId ||
+        (completedSale.customerName && c.name.toLowerCase() === completedSale.customerName.toLowerCase())
+    );
+  }, [completedSale, customers]);
+
+  const handleOpenLastReceipt = async () => {
+    if (completedSale) return;
+    if (lastSale) {
+      setCompletedSale(lastSale);
+      return;
+    }
+    try {
+      setIsLoadingLastSale(true);
+      const sales = await api.getSales();
+      if (sales && sales.length > 0) {
+        setLastSale(sales[0]);
+        setCompletedSale(sales[0]);
+      } else {
+        info('Nenhuma venda registada até ao momento para emitir recibo.');
+      }
+    } catch (e) {
+      error('Não foi possível carregar o último recibo.');
+    } finally {
+      setIsLoadingLastSale(false);
+    }
+  };
+
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       const matchCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
@@ -96,13 +135,26 @@ export const PosSalePage: React.FC = () => {
 
   const addToCart = (product: Product) => {
     const availableStock = product.stockQuantity ?? product.currentStock ?? 0;
+    const minStock = product.minStock ?? 5;
+
+    // Audible alert and warning for low or depleted stock
     if (availableStock <= 0) {
       warning(`Atenção: O produto ${product.name} está esgotado no stock!`);
+      posAudio.playLowStock();
+    } else if (availableStock <= minStock) {
+      warning(`⚠️ Alerta de Stock Baixo: Restam apenas ${availableStock} un de ${product.name} (mínimo: ${minStock})`);
+      posAudio.playLowStock();
+    } else {
+      posAudio.playItemAdded();
     }
 
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
+        if (existing.quantity + 1 > availableStock) {
+          warning(`⚠️ Quantidade solicitada (${existing.quantity + 1}) ultrapassa o stock disponível (${availableStock} un)!`);
+          posAudio.playLowStock();
+        }
         return prev.map((item) =>
           item.product.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
@@ -119,7 +171,22 @@ export const PosSalePage: React.FC = () => {
         .map((item) => {
           if (item.product.id === productId) {
             const newQty = item.quantity + delta;
-            return newQty > 0 ? { ...item, quantity: newQty } : null;
+            if (newQty > 0) {
+              const stock = item.product.stockQuantity ?? item.product.currentStock ?? 0;
+              const minStock = item.product.minStock ?? 5;
+              if (delta > 0) {
+                if (newQty > stock) {
+                  warning(`⚠️ Quantidade (${newQty}) excede o stock disponível (${stock} un)!`);
+                  posAudio.playLowStock();
+                } else if (stock - newQty <= minStock) {
+                  posAudio.playLowStock();
+                } else {
+                  posAudio.playItemAdded();
+                }
+              }
+              return { ...item, quantity: newQty };
+            }
+            return null;
           }
           return item;
         })
@@ -153,13 +220,29 @@ export const PosSalePage: React.FC = () => {
     return Math.max(0, rec - total);
   }, [receivedAmount, total, paymentMethod]);
 
-  const handleBarcodeScanned = (barcode: string) => {
-    const found = products.find((p) => p.barcode === barcode);
+  const handleBarcodeScanned = (barcode: string): { found: boolean; productName?: string } => {
+    const clean = (barcode || '').trim();
+    if (!clean) return { found: false };
+
+    const cleanNum = clean.replace(/^0+/, '');
+    const found = products.find((p) => {
+      const pBarcode = (p.barcode || '').trim();
+      const pSku = (p.sku || '').trim();
+      return (
+        pBarcode === clean ||
+        (cleanNum && pBarcode.replace(/^0+/, '') === cleanNum) ||
+        pSku.toLowerCase() === clean.toLowerCase() ||
+        p.id === clean
+      );
+    });
+
     if (found) {
       addToCart(found);
       success(`Produto adicionado: ${found.name}`);
+      return { found: true, productName: found.name };
     } else {
-      warning(`Nenhum produto encontrado com o código: ${barcode}`);
+      warning(`Nenhum produto encontrado com o código: ${clean}`);
+      return { found: false };
     }
   };
 
@@ -211,6 +294,10 @@ export const PosSalePage: React.FC = () => {
 
       const result = await api.createSale(salePayload);
       setCompletedSale(result);
+      setLastSale(result);
+
+      // Play customized POS sale confirmation sound alert
+      posAudio.playSaleSuccess();
 
       // Trigger Confetti
       try {
@@ -249,9 +336,17 @@ export const PosSalePage: React.FC = () => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Buscar produto por nome, código ou referência..."
+              placeholder="Buscar produto por nome, código de barras (ou bipar com leitor USB)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchTerm.trim()) {
+                  const result = handleBarcodeScanned(searchTerm.trim());
+                  if (result.found) {
+                    setSearchTerm('');
+                  }
+                }
+              }}
               className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-3 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
             />
             {searchTerm && (
@@ -271,6 +366,31 @@ export const PosSalePage: React.FC = () => {
           >
             <ScanBarcode className="w-4 h-4 text-emerald-400" />
             <span className="hidden sm:inline">Scanner</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSoundSettingsOpen(true)}
+            className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3 sm:px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Configurar Alertas Sonoros do PDV"
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <VolumeX className="w-4 h-4 text-slate-400" />
+            )}
+            <span className="hidden sm:inline">Sons PDV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenLastReceipt}
+            disabled={isLoadingLastSale}
+            className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 px-3 sm:px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-colors shadow-2xs shrink-0 cursor-pointer"
+            title="Reimprimir, exportar PDF ou enviar via WhatsApp o último recibo emitido"
+          >
+            <Receipt className="w-4 h-4 text-emerald-600" />
+            <span className="hidden sm:inline">Último Recibo</span>
           </button>
         </div>
 
@@ -397,14 +517,28 @@ export const PosSalePage: React.FC = () => {
                 <span className="text-[11px] text-slate-400">{cart.length} item(ns)</span>
               </div>
             </div>
-            {cart.length > 0 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={clearCart}
-                className="text-xs text-rose-600 hover:text-rose-700 font-bold"
+                type="button"
+                onClick={() => setIsSoundSettingsOpen(true)}
+                className={`p-1.5 rounded-xl border transition-colors ${
+                  soundEnabled
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'
+                }`}
+                title="Configurar Alertas Sonoros do PDV"
               >
-                Limpar
+                {soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
               </button>
-            )}
+              {cart.length > 0 && (
+                <button
+                  onClick={clearCart}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Customer Selection Field */}
@@ -481,8 +615,16 @@ export const PosSalePage: React.FC = () => {
             ))}
 
             {cart.length === 0 && (
-              <div className="py-6 text-center text-xs text-slate-400">
-                Toque nos produtos ao lado para adicionar ao carrinho.
+              <div className="py-6 text-center text-xs text-slate-400 space-y-2">
+                <p>Toque nos produtos ao lado para adicionar ao carrinho.</p>
+                <button
+                  type="button"
+                  onClick={handleOpenLastReceipt}
+                  className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-bold text-[11px] underline underline-offset-2 cursor-pointer"
+                >
+                  <Receipt className="w-3.5 h-3.5" />
+                  <span>Ver ou Reimprimir Último Recibo</span>
+                </button>
               </div>
             )}
           </div>
@@ -578,6 +720,16 @@ export const PosSalePage: React.FC = () => {
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScan={handleBarcodeScanned}
+        quickSamples={products.filter((p) => !!p.barcode && p.barcode.trim().length > 0).map((p) => p.barcode!.trim()).slice(0, 5)}
+      />
+
+      {/* POS Sound Alerts Settings Modal */}
+      <PosSoundSettingsModal
+        isOpen={isSoundSettingsOpen}
+        onClose={() => {
+          setIsSoundSettingsOpen(false);
+          setSoundEnabled(posAudio.getSettings().enabled);
+        }}
       />
 
       {/* Digital Receipt Modal */}
@@ -586,6 +738,7 @@ export const PosSalePage: React.FC = () => {
         onClose={() => setCompletedSale(null)}
         sale={completedSale}
         company={company}
+        customerPhone={activeReceiptCustomer?.phone || ''}
         onNewSale={clearCart}
       />
 

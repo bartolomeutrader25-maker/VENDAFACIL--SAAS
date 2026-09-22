@@ -9,15 +9,24 @@ import {
   DollarSign,
   CheckCircle2,
   Sparkles,
-  CreditCard
+  CreditCard,
+  Cloud,
+  ShieldCheck
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
+import { CompanyBackupManager } from '../components/common/CompanyBackupManager.js';
 
-export const CompanyProfilePage: React.FC = () => {
+interface CompanyProfilePageProps {
+  defaultTab?: 'general' | 'backup';
+}
+
+export const CompanyProfilePage: React.FC<CompanyProfilePageProps> = ({ defaultTab = 'general' }) => {
   const { company, setCompany, updateCompanyData } = useAuth();
   const { success, error } = useToast();
+
+  const [activeTab, setActiveTab] = useState<'general' | 'backup'>(defaultTab);
 
   const [name, setName] = useState(company?.name || '');
   const [nif, setNif] = useState(company?.nif || '');
@@ -29,6 +38,12 @@ export const CompanyProfilePage: React.FC = () => {
     company?.receiptFooter || 'Obrigado pela preferência! Volte sempre.'
   );
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (defaultTab) {
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab]);
 
   useEffect(() => {
     if (company) {
@@ -68,17 +83,54 @@ export const CompanyProfilePage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Top Header */}
-      <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-200/80 shadow-2xs">
-        <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-          Perfil da Empresa & Configurações
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-          Identificação fiscal, moeda do sistema e personalização dos recibos digitais
-        </p>
+      {/* Top Header with Navigation Tabs */}
+      <div className="bg-white p-4 sm:p-6 rounded-3xl border border-slate-200/80 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              {activeTab === 'general' ? 'Perfil da Empresa & Configurações' : 'Cópias de Segurança & Google Drive'}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+              {activeTab === 'general'
+                ? 'Identificação fiscal, moeda do sistema e personalização dos recibos digitais'
+                : 'Salvaguarda de vendas, clientes, catálogo de produtos e sincronização com a nuvem'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl shrink-0 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('general')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'general'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Building2 className="w-4 h-4 text-emerald-600" />
+              <span>Dados da Empresa</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('backup')}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'backup'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Cloud className="w-4 h-4 text-blue-600" />
+              <span>Backups & Google Drive</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      {activeTab === 'backup' ? (
+        <CompanyBackupManager />
+      ) : (
+        <form onSubmit={handleSave} className="space-y-6">
         {/* Basic Business Info */}
         <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/80 shadow-2xs space-y-4">
           <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">

@@ -440,6 +440,63 @@ class Database {
     };
   }
 
+  public exportCompanyBackup(companyId: string) {
+    const company = this.companies.get(companyId);
+    if (!company) {
+      throw new Error('Empresa não encontrada no sistema');
+    }
+
+    const companySales = Array.from(this.sales.values()).filter(s => s.companyId === companyId);
+    const companyProducts = Array.from(this.products.values()).filter(p => p.companyId === companyId);
+    const companyCategories = Array.from(this.categories.values()).filter(c => c.companyId === companyId);
+    const companyCustomers = Array.from(this.customers.values()).filter(c => c.companyId === companyId);
+    const companyReceivables = Array.from(this.receivables.values()).filter(r => r.companyId === companyId);
+    const companyExpenses = Array.from(this.expenses.values()).filter(e => e.companyId === companyId);
+    const companyCashRegisters = Array.from(this.cashRegisters.values()).filter(cr => cr.companyId === companyId);
+    const companyStockMovements = Array.from(this.stockMovements.values()).filter(sm => sm.companyId === companyId);
+
+    const totalRevenue = companySales.reduce((acc, s) => acc + (s.total || 0), 0);
+
+    return {
+      appName: 'VendaFácil SaaS',
+      backupType: 'company_export',
+      version: '2.0.0',
+      exportedAt: new Date().toISOString(),
+      timestamp: Date.now(),
+      company: {
+        id: company.id,
+        name: company.name,
+        nif: company.nif || '',
+        phone: company.phone || '',
+        email: company.email || '',
+        address: company.address || '',
+        currency: company.currency || 'Kz',
+        receiptFooter: company.receiptFooter || ''
+      },
+      summary: {
+        totalSales: companySales.length,
+        totalProducts: companyProducts.length,
+        totalCategories: companyCategories.length,
+        totalCustomers: companyCustomers.length,
+        totalReceivables: companyReceivables.length,
+        totalExpenses: companyExpenses.length,
+        totalCashRegisters: companyCashRegisters.length,
+        totalStockMovements: companyStockMovements.length,
+        totalSalesRevenue: totalRevenue
+      },
+      data: {
+        sales: companySales,
+        products: companyProducts,
+        categories: companyCategories,
+        customers: companyCustomers,
+        receivables: companyReceivables,
+        expenses: companyExpenses,
+        cashRegisters: companyCashRegisters,
+        stockMovements: companyStockMovements
+      }
+    };
+  }
+
   public restoreFullBackup(backup: any): { success: boolean; message: string; stats?: any } {
     try {
       if (!backup || (!backup.data && !backup.companies)) {

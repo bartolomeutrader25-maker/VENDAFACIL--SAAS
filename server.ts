@@ -2,7 +2,12 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db.js';
-import { askBusinessAssistant, BusinessDataSummary } from './server/gemini.js';
+import {
+  askBusinessAssistant,
+  BusinessDataSummary,
+  extractProductFromAudioAndImage,
+  extractHeuristicallyFromTranscript
+} from './server/gemini.js';
 import {
   Product,
   Sale,
@@ -438,6 +443,40 @@ async function startServer() {
     res.json(updated);
   });
 
+  // Company Tenant Backup Export
+  app.get('/api/company/backup/export', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (!req.companyId) {
+        return res.status(401).json({ error: 'Empresa não identificada nesta sessão' });
+      }
+      const backup = db.exportCompanyBackup(req.companyId);
+      const sanitizedName = (backup.company.name || 'empresa').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const dateStr = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="backup_${sanitizedName}_${dateStr}.json"`);
+      res.json(backup);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao exportar cópia de segurança da empresa' });
+    }
+  });
+
+  app.get('/api/company/backup/summary', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (!req.companyId) {
+        return res.status(401).json({ error: 'Empresa não identificada nesta sessão' });
+      }
+      const backup = db.exportCompanyBackup(req.companyId);
+      res.json({
+        company: backup.company,
+        summary: backup.summary,
+        timestamp: backup.timestamp,
+        exportedAt: backup.exportedAt
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao obter sumário da cópia de segurança' });
+    }
+  });
+
   // ==========================================
   // DASHBOARD METRICS
   // ==========================================
@@ -554,7 +593,8 @@ async function startServer() {
         currentStock,
         stockQuantity,
         minStock,
-        unit
+        unit,
+        expirationDate
       } = req.body;
 
       const effectiveCostPrice = Number(costPrice) || 0;
@@ -583,6 +623,7 @@ async function startServer() {
         stockQuantity: effectiveStock,
         minStock: Number(minStock) || 5,
         unit: unit || 'un',
+        expirationDate: expirationDate ? String(expirationDate).trim() : undefined,
         isActive: true,
         createdAt: new Date().toISOString()
       };
@@ -640,11 +681,76 @@ async function startServer() {
       sellingPrice: salePrice,
       currentStock: stock,
       stockQuantity: stock,
+      expirationDate: req.body.expirationDate !== undefined ? (req.body.expirationDate ? String(req.body.expirationDate).trim() : undefined) : product.expirationDate,
       id: product.id,
       companyId: product.companyId
     };
     db.products.set(product.id, updated);
     res.json(updated);
+  });
+
+  // AI Product Extraction from Audio & Image (Gemini 3.8 Flash)
+  app.post('/api/products/ai-extract', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const companyId = req.companyId!;
+      const { audioBase64, audioMimeType, audioTranscript, imageBase64, imageMimeType } = req.body;
+
+      if (!audioBase64 && !imageBase64 && !audioTranscript) {
+        return res.status(400).json({ error: 'É necessário fornecer áudio, texto falado ou imagem para extração.' });
+      }
+
+      const companyCategories = db.getCompanyCategories(companyId).map(c => c.name);
+
+      const extracted = await extractProductFromAudioAndImage({
+        audioBase64,
+        audioMimeType,
+        audioTranscript,
+        imageBase64,
+        imageMimeType,
+        existingCategories: companyCategories
+      });
+
+      // Try matching category to existing ID
+      let matchedCategoryId = '';
+      if (extracted.categoryName) {
+        const cat = db.getCompanyCategories(companyId).find(
+          c => c.name.toLowerCase() === extracted.categoryName?.toLowerCase()
+        );
+        if (cat) matchedCategoryId = cat.id;
+      }
+
+      res.json({
+        ...extracted,
+        matchedCategoryId
+      });
+    } catch (err: any) {
+      console.error('Erro no endpoint /api/products/ai-extract:', err);
+      const companyId = req.companyId;
+      const { audioTranscript } = req.body;
+      const companyCategories = companyId ? db.getCompanyCategories(companyId).map(c => c.name) : [];
+
+      if (audioTranscript && audioTranscript.trim()) {
+        console.warn('A recorrer à extração heurística por transcrição local...');
+        const fallback = extractHeuristicallyFromTranscript(audioTranscript, companyCategories);
+        let matchedCategoryId = '';
+        if (fallback.categoryName && companyId) {
+          const cat = db.getCompanyCategories(companyId).find(
+            c => c.name.toLowerCase() === fallback.categoryName?.toLowerCase()
+          );
+          if (cat) matchedCategoryId = cat.id;
+        }
+        return res.json({
+          ...fallback,
+          matchedCategoryId
+        });
+      }
+
+      let errorMsg = err.message || 'Erro ao processar dados com IA';
+      if (errorMsg.includes('503') || errorMsg.includes('high demand') || errorMsg.includes('UNAVAILABLE')) {
+        errorMsg = 'O serviço de Inteligência Artificial do Google está temporariamente com alta procura. Por favor, tente novamente dentro de instantes ou preencha os campos abaixo.';
+      }
+      res.status(503).json({ error: errorMsg });
+    }
   });
 
   app.delete('/api/products/:id', authMiddleware, requireActiveSubscription, (req: AuthenticatedRequest, res: Response) => {

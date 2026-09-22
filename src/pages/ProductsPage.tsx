@@ -15,7 +15,11 @@ import {
   Filter,
   FolderTree,
   Sparkles,
-  Copy
+  Copy,
+  Mic,
+  Calendar,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product, Category } from '../types/index.js';
@@ -25,6 +29,7 @@ import { useToast } from '../context/ToastContext.js';
 import { ProductThumbnail } from '../components/common/ProductThumbnail.js';
 import { ProductImageUploader } from '../components/common/ProductImageUploader.js';
 import { CategoryManagementModal } from '../components/common/CategoryManagementModal.js';
+import { AiAudioProductRegistrationModal } from '../components/AiAudioProductRegistrationModal.js';
 
 export const ProductsPage: React.FC = () => {
   const { company } = useAuth();
@@ -39,6 +44,7 @@ export const ProductsPage: React.FC = () => {
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAiAudioModalOpen, setIsAiAudioModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
@@ -51,6 +57,7 @@ export const ProductsPage: React.FC = () => {
   const [sellingPrice, setSellingPrice] = useState<number>(0);
   const [stockQuantity, setStockQuantity] = useState<number>(0);
   const [minStock, setMinStock] = useState<number>(5);
+  const [expirationDate, setExpirationDate] = useState<string>('');
   const [barcode, setBarcode] = useState('');
   const [unit, setUnit] = useState('un');
 
@@ -92,6 +99,7 @@ export const ProductsPage: React.FC = () => {
     setSellingPrice(0);
     setStockQuantity(10);
     setMinStock(5);
+    setExpirationDate('');
     setBarcode('');
     setUnit('un');
     if (categories.length > 0) setCategoryId(categories[0].id);
@@ -108,6 +116,7 @@ export const ProductsPage: React.FC = () => {
     setSellingPrice(p.sellingPrice ?? p.salePrice ?? 0);
     setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
     setMinStock(p.minStock);
+    setExpirationDate(p.expirationDate || '');
     setBarcode(p.barcode || '');
     setUnit(p.unit || 'un');
     setIsModalOpen(true);
@@ -123,6 +132,7 @@ export const ProductsPage: React.FC = () => {
     setSellingPrice(p.sellingPrice ?? p.salePrice ?? 0);
     setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
     setMinStock(p.minStock);
+    setExpirationDate(p.expirationDate || '');
     setBarcode(''); // Clear barcode to avoid duplicates
     setUnit(p.unit || 'un');
     setIsModalOpen(true);
@@ -152,6 +162,7 @@ export const ProductsPage: React.FC = () => {
         stockQuantity: Number(stockQuantity) || 0,
         currentStock: Number(stockQuantity) || 0,
         minStock: Number(minStock) || 0,
+        expirationDate: expirationDate ? expirationDate.trim() : undefined,
         barcode: barcode.trim() || undefined,
         unit,
       };
@@ -183,6 +194,10 @@ export const ProductsPage: React.FC = () => {
     }
   };
 
+  const lowStockProducts = useMemo(() => {
+    return products.filter((p) => (p.stockQuantity ?? 0) <= (p.minStock ?? 5));
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       const matchSearch =
@@ -197,6 +212,159 @@ export const ProductsPage: React.FC = () => {
     });
   }, [products, searchTerm, selectedCategory, stockFilter]);
 
+  // Export functions (CSV & Excel)
+  const exportProductsToCSV = (targetProducts = filteredProducts) => {
+    if (targetProducts.length === 0) {
+      warning('Não existem produtos para exportar com os filtros atuais.');
+      return;
+    }
+
+    const headers = [
+      'Nome do Produto',
+      'Categoria',
+      'Código de Barras',
+      'Preço de Compra (' + curr + ')',
+      'Preço de Venda (' + curr + ')',
+      'Margem Lucro (%)',
+      'Stock Actual',
+      'Stock Mínimo',
+      'Unidade',
+      'Data de Vencimento',
+      'Estado Stock'
+    ];
+
+    const rows = targetProducts.map((p) => {
+      const profit = p.sellingPrice - p.costPrice;
+      const margin = p.sellingPrice > 0 ? Math.round((profit / p.sellingPrice) * 100) : 0;
+      const isOut = p.stockQuantity <= 0;
+      const isLow = p.stockQuantity <= p.minStock && !isOut;
+      const stockStatus = isOut ? 'Sem Stock' : isLow ? 'Stock Baixo' : 'Normal';
+
+      const escapeCell = (val: any) => {
+        if (val === undefined || val === null) return '""';
+        const str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+      };
+
+      return [
+        escapeCell(p.name),
+        escapeCell(p.categoryName || 'Geral'),
+        escapeCell(p.barcode || ''),
+        p.costPrice,
+        p.sellingPrice,
+        margin,
+        p.stockQuantity,
+        p.minStock,
+        escapeCell(p.unit || 'un'),
+        escapeCell(p.expirationDate || ''),
+        escapeCell(stockStatus)
+      ].join(';');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.download = `produtos_${company?.name ? company.name.toLowerCase().replace(/\s+/g, '_') : 'vendafacil'}_${dateStr}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    success(`Exportados ${targetProducts.length} produtos em formato CSV!`);
+  };
+
+  const exportProductsToExcel = (targetProducts = filteredProducts) => {
+    if (targetProducts.length === 0) {
+      warning('Não existem produtos para exportar com os filtros atuais.');
+      return;
+    }
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const tableRows = targetProducts.map((p) => {
+      const profit = p.sellingPrice - p.costPrice;
+      const margin = p.sellingPrice > 0 ? Math.round((profit / p.sellingPrice) * 100) : 0;
+      const isOut = p.stockQuantity <= 0;
+      const isLow = p.stockQuantity <= p.minStock && !isOut;
+      const stockStatus = isOut ? 'Sem Stock' : isLow ? 'Stock Baixo' : 'Normal';
+
+      return `
+        <tr>
+          <td>${p.name}</td>
+          <td>${p.categoryName || 'Geral'}</td>
+          <td style="mso-number-format:'\\@';">${p.barcode || ''}</td>
+          <td style="text-align:right;">${p.costPrice}</td>
+          <td style="text-align:right;">${p.sellingPrice}</td>
+          <td style="text-align:center;">${margin}%</td>
+          <td style="text-align:center; font-weight:bold; ${isLow || isOut ? 'color:#b91c1c;' : ''}">${p.stockQuantity}</td>
+          <td style="text-align:center;">${p.minStock}</td>
+          <td style="text-align:center;">${p.unit || 'un'}</td>
+          <td style="text-align:center;">${p.expirationDate || ''}</td>
+          <td style="text-align:center; font-weight:bold; ${isLow || isOut ? 'color:#b91c1c; background-color:#fee2e2;' : 'color:#15803d; background-color:#dcfce7;'}">${stockStatus}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const excelHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8"/>
+          <!--[if gte mso 9]>
+          <xml>
+            <x:ExcelWorkbook>
+              <x:ExcelWorksheets>
+                <x:ExcelWorksheet>
+                  <x:Name>Produtos</x:Name>
+                  <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+                </x:ExcelWorksheet>
+              </x:ExcelWorksheets>
+            </x:ExcelWorkbook>
+          </xml>
+          <![endif]-->
+          <style>
+            th { background-color: #059669; color: #ffffff; font-weight: bold; border: 1px solid #e2e8f0; padding: 8px; }
+            td { border: 1px solid #e2e8f0; padding: 6px; }
+          </style>
+        </head>
+        <body>
+          <h2>Lista de Produtos - ${company?.name || 'VendaFácil'} (${new Date().toLocaleDateString('pt-PT')})</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Nome do Produto</th>
+                <th>Categoria</th>
+                <th>Código de Barras</th>
+                <th>Preço de Compra (${curr})</th>
+                <th>Preço de Venda (${curr})</th>
+                <th>Margem (%)</th>
+                <th>Stock Actual</th>
+                <th>Stock Mínimo</th>
+                <th>Unidade</th>
+                <th>Data de Vencimento</th>
+                <th>Estado Stock</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([excelHtml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `produtos_${company?.name ? company.name.toLowerCase().replace(/\s+/g, '_') : 'vendafacil'}_${dateStr}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    success(`Exportados ${targetProducts.length} produtos para Excel (.xls)!`);
+  };
+
   return (
     <div className="space-y-5">
       {/* Top Header with Add Product CTA */}
@@ -210,13 +378,47 @@ export const ProductsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* Export Buttons */}
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-2xl border border-slate-200">
+            <button
+              onClick={() => exportProductsToExcel(filteredProducts)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-emerald-800 hover:bg-white hover:shadow-2xs transition-all cursor-pointer"
+              title="Exportar lista atual para Excel (.xls)"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+            <span className="w-px h-4 bg-slate-300"></span>
+            <button
+              onClick={() => exportProductsToCSV(filteredProducts)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-white hover:shadow-2xs transition-all cursor-pointer"
+              title="Exportar lista atual em formato CSV"
+            >
+              <Download className="w-4 h-4 text-slate-500" />
+              <span>CSV</span>
+            </button>
+          </div>
+
           <button
             onClick={() => setIsCategoryModalOpen(true)}
             className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-2xs transition-all shrink-0 cursor-pointer"
           >
             <FolderTree className="w-4 h-4 text-emerald-600" />
-            <span>Gerir Categorias ({categories.length})</span>
+            <span className="hidden sm:inline">Categorias</span>
+            <span className="sm:hidden">Cat.</span>
+          </button>
+
+          <button
+            onClick={() => setIsAiAudioModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 via-emerald-600 to-emerald-700 hover:from-teal-700 hover:to-emerald-800 active:scale-98 text-white px-3.5 sm:px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all shrink-0 cursor-pointer border border-emerald-500/30"
+            title="Registar produto falando por áudio e tirando foto"
+          >
+            <div className="flex items-center -space-x-1">
+              <Mic className="w-4 h-4 text-amber-300" />
+              <Sparkles className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span>Registar por Áudio/Foto</span>
           </button>
 
           <button
@@ -228,6 +430,53 @@ export const ProductsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Alerta de Stock Baixo Banner */}
+      {lowStockProducts.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-50 via-amber-50/70 to-rose-50 border border-amber-200 rounded-3xl p-4 sm:p-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0 text-amber-700 shadow-2xs">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-black text-amber-950 text-sm sm:text-base">
+                    Alerta de Stock Baixo & Reposição Necessária
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-200 text-amber-900 border border-amber-300">
+                    {lowStockProducts.length} {lowStockProducts.length === 1 ? 'item crítico' : 'itens críticos'}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800/90 mt-0.5">
+                  Existem produtos que atingiram ou estão abaixo do limite mínimo definido de stock.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button
+                onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                  stockFilter === 'low'
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                    : 'bg-white hover:bg-amber-100 text-amber-900 border-amber-300'
+                }`}
+              >
+                {stockFilter === 'low' ? 'Ver Todos os Produtos' : 'Filtrar Críticos'}
+              </button>
+              <button
+                onClick={() => exportProductsToExcel(lowStockProducts)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white shadow-2xs transition-colors cursor-pointer"
+                title="Exportar apenas a lista de compras para reposição de stock em Excel"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Exportar Lista de Compras</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-2xs space-y-3">
@@ -262,9 +511,9 @@ export const ProductsPage: React.FC = () => {
               onChange={(e) => setStockFilter(e.target.value as any)}
               className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:border-emerald-500"
             >
-              <option value="all">Todos os Stocks</option>
-              <option value="low">⚠️ Stock Baixo</option>
-              <option value="out">❌ Sem Stock</option>
+              <option value="all">Todos os Stocks ({products.length})</option>
+              <option value="low">⚠️ Stock Baixo ({lowStockProducts.filter(p => p.stockQuantity > 0).length})</option>
+              <option value="out">❌ Sem Stock ({products.filter(p => p.stockQuantity <= 0).length})</option>
             </select>
           </div>
         </div>
@@ -276,12 +525,13 @@ export const ProductsPage: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider">
               <tr>
-                <th className="p-3.5 sm:px-5">Produto</th>
+                <th className="p-3.5 sm:px-5">Nome do Produto</th>
                 <th className="p-3.5 sm:px-4">Categoria</th>
-                <th className="p-3.5 sm:px-4 text-right">P. Custo</th>
-                <th className="p-3.5 sm:px-4 text-right">P. Venda</th>
-                <th className="p-3.5 sm:px-4 text-center">Margem</th>
-                <th className="p-3.5 sm:px-4 text-center">Stock</th>
+                <th className="p-3.5 sm:px-4 text-right">Preço de Compra</th>
+                <th className="p-3.5 sm:px-4 text-right">Preço de Venda</th>
+                <th className="p-3.5 sm:px-4 text-center">Stock Actual</th>
+                <th className="p-3.5 sm:px-4 text-center">Stock Mínimo</th>
+                <th className="p-3.5 sm:px-4 text-center">Data de Vencimento</th>
                 <th className="p-3.5 sm:px-5 text-right">Ações</th>
               </tr>
             </thead>
@@ -291,6 +541,18 @@ export const ProductsPage: React.FC = () => {
                 const margin = prod.sellingPrice > 0 ? Math.round((profit / prod.sellingPrice) * 100) : 0;
                 const isOut = prod.stockQuantity <= 0;
                 const isLow = prod.stockQuantity <= prod.minStock && !isOut;
+
+                // Check expiration status
+                let isExpired = false;
+                let isExpiringSoon = false;
+                if (prod.expirationDate) {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const exp = new Date(prod.expirationDate);
+                  const diffDays = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  if (diffDays < 0) isExpired = true;
+                  else if (diffDays <= 30) isExpiringSoon = true;
+                }
 
                 return (
                   <tr key={prod.id} className="hover:bg-slate-50/70 transition-colors">
@@ -328,14 +590,12 @@ export const ProductsPage: React.FC = () => {
                     <td className="p-3.5 sm:px-4 text-right text-slate-500">
                       {formatCurrency(prod.costPrice)}
                     </td>
-                    <td className="p-3.5 sm:px-4 text-right font-bold text-emerald-700 text-sm">
-                      {formatCurrency(prod.sellingPrice)}
-                    </td>
-                    <td className="p-3.5 sm:px-4 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded font-bold text-[10px] ${
-                        margin >= 30 ? 'bg-emerald-100 text-emerald-800' : margin > 0 ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'
+                    <td className="p-3.5 sm:px-4 text-right">
+                      <span className="font-bold text-emerald-700 text-sm">{formatCurrency(prod.sellingPrice)}</span>
+                      <span className={`block text-[10px] font-bold ${
+                        margin >= 30 ? 'text-emerald-600' : margin > 0 ? 'text-blue-600' : 'text-rose-600'
                       }`}>
-                        {margin}%
+                        {margin}% margem
                       </span>
                     </td>
                     <td className="p-3.5 sm:px-4 text-center">
@@ -345,6 +605,30 @@ export const ProductsPage: React.FC = () => {
                         {isOut && <AlertTriangle className="w-3 h-3" />}
                         <span>{prod.stockQuantity} {prod.unit || 'un'}</span>
                       </span>
+                    </td>
+                    <td className="p-3.5 sm:px-4 text-center text-slate-600 font-bold">
+                      {prod.minStock} {prod.unit || 'un'}
+                    </td>
+                    <td className="p-3.5 sm:px-4 text-center">
+                      {prod.expirationDate ? (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold border ${
+                            isExpired
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : isExpiringSoon
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                          title={isExpired ? 'Produto Vencido!' : isExpiringSoon ? 'Vence em menos de 30 dias' : 'Válido'}
+                        >
+                          <Calendar className="w-3 h-3 shrink-0" />
+                          <span>{new Date(prod.expirationDate).toLocaleDateString('pt-PT')}</span>
+                          {isExpired && <span className="text-[9px] uppercase px-1 bg-rose-200 text-rose-900 rounded font-black">Vencido</span>}
+                          {isExpiringSoon && !isExpired && <span className="text-[9px] uppercase px-1 bg-amber-200 text-amber-900 rounded font-black">Breve</span>}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">Não definida</span>
+                      )}
                     </td>
                     <td className="p-3.5 sm:px-5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -377,7 +661,7 @@ export const ProductsPage: React.FC = () => {
 
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
                     <p className="font-bold text-slate-700">Nenhum produto encontrado</p>
                   </td>
@@ -540,17 +824,29 @@ export const ProductsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Código de Barras (Opcional)</label>
-                  <div className="relative">
-                    <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Data de Validade (Vencimento)</label>
                     <input
-                      type="text"
-                      value={barcode}
-                      onChange={(e) => setBarcode(e.target.value)}
-                      placeholder="Ex: 560123456789"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 font-mono focus:outline-none focus:border-emerald-500"
+                      type="date"
+                      value={expirationDate}
+                      onChange={(e) => setExpirationDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-500"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Código de Barras (Opcional)</label>
+                    <div className="relative">
+                      <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={barcode}
+                        onChange={(e) => setBarcode(e.target.value)}
+                        placeholder="Ex: 560123456789"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 font-mono focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -578,6 +874,17 @@ export const ProductsPage: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* AI Audio & Photo Registration Modal */}
+      <AiAudioProductRegistrationModal
+        isOpen={isAiAudioModalOpen}
+        onClose={() => setIsAiAudioModalOpen(false)}
+        categories={categories}
+        currency={curr}
+        onProductCreated={(newProd) => {
+          setProducts((prev) => [newProd, ...prev]);
+        }}
+      />
 
       {/* Category Management Modal */}
       <CategoryManagementModal

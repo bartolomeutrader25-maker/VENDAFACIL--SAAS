@@ -118,7 +118,11 @@ const MainRouter: React.FC = () => {
         return <EmployeesPage onNavigate={setCurrentPage} />;
       case 'company':
       case 'empresa':
-        return <CompanyProfilePage />;
+        return <CompanyProfilePage defaultTab="general" />;
+      case 'backup':
+      case 'backups':
+      case 'drive':
+        return <CompanyProfilePage defaultTab="backup" />;
       case 'subscriptions':
       case 'planos':
         return <SubscriptionsPage />;
