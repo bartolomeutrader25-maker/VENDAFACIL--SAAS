@@ -14,7 +14,8 @@ import {
   ArrowUpDown,
   Filter,
   FolderTree,
-  Sparkles
+  Sparkles,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product, Category } from '../types/index.js';
@@ -40,6 +41,7 @@ export const ProductsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isDuplicating, setIsDuplicating] = useState(false);
 
   // Form Fields
   const [name, setName] = useState('');
@@ -83,6 +85,7 @@ export const ProductsPage: React.FC = () => {
 
   const openAddModal = () => {
     setEditingProduct(null);
+    setIsDuplicating(false);
     setName('');
     setImageUrl('');
     setCostPrice(0);
@@ -97,6 +100,7 @@ export const ProductsPage: React.FC = () => {
 
   const openEditModal = (p: Product) => {
     setEditingProduct(p);
+    setIsDuplicating(false);
     setName(p.name);
     setImageUrl(p.imageUrl || '');
     setCategoryId(p.categoryId || '');
@@ -105,6 +109,21 @@ export const ProductsPage: React.FC = () => {
     setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
     setMinStock(p.minStock);
     setBarcode(p.barcode || '');
+    setUnit(p.unit || 'un');
+    setIsModalOpen(true);
+  };
+
+  const openDuplicateModal = (p: Product) => {
+    setEditingProduct(null);
+    setIsDuplicating(true);
+    setName(`${p.name} (Cópia)`);
+    setImageUrl(p.imageUrl || '');
+    setCategoryId(p.categoryId || '');
+    setCostPrice(p.costPrice);
+    setSellingPrice(p.sellingPrice ?? p.salePrice ?? 0);
+    setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
+    setMinStock(p.minStock);
+    setBarcode(''); // Clear barcode to avoid duplicates
     setUnit(p.unit || 'un');
     setIsModalOpen(true);
   };
@@ -144,7 +163,7 @@ export const ProductsPage: React.FC = () => {
       } else {
         const created = await api.createProduct(payload);
         setProducts((prev) => [created, ...prev]);
-        success('Produto adicionado ao catálogo!');
+        success(isDuplicating ? 'Produto duplicado com sucesso!' : 'Produto adicionado ao catálogo!');
       }
 
       setIsModalOpen(false);
@@ -330,6 +349,13 @@ export const ProductsPage: React.FC = () => {
                     <td className="p-3.5 sm:px-5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
+                          onClick={() => openDuplicateModal(prod)}
+                          className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Duplicar Produto"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => openEditModal(prod)}
                           className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
                           title="Editar"
@@ -374,11 +400,18 @@ export const ProductsPage: React.FC = () => {
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 sticky top-0 bg-white z-10">
                 <div>
-                  <h3 className="font-black text-base text-slate-900">
-                    {editingProduct ? 'Editar Produto' : 'Novo Produto'}
+                  <h3 className="font-black text-base text-slate-900 flex items-center gap-2">
+                    {isDuplicating && <Copy className="w-4 h-4 text-blue-600" />}
+                    {isDuplicating
+                      ? 'Duplicar Produto'
+                      : editingProduct
+                      ? 'Editar Produto'
+                      : 'Novo Produto'}
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Insira os dados, categoria e foto do produto para identificação nas vendas
+                    {isDuplicating
+                      ? 'Criação de um novo produto baseado nos dados copiados. Pode ajustar preços, stock e foto.'
+                      : 'Insira os dados, categoria e foto do produto para identificação nas vendas'}
                   </p>
                 </div>
                 <button
@@ -531,9 +564,13 @@ export const ProductsPage: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors shadow-sm"
+                    className={`flex-1 py-2.5 rounded-xl font-bold transition-colors shadow-sm text-white ${
+                      isDuplicating
+                        ? 'bg-blue-600 hover:bg-blue-700'
+                        : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
                   >
-                    Guardar Produto
+                    {isDuplicating ? 'Duplicar e Criar Produto' : 'Guardar Produto'}
                   </button>
                 </div>
               </form>
