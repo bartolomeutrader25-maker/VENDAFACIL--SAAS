@@ -72,6 +72,8 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
   const [currentStock, setCurrentStock] = useState<number>(1);
   const [minStock, setMinStock] = useState<number>(5);
   const [expirationDate, setExpirationDate] = useState<string>('');
+  const [batchNumber, setBatchNumber] = useState<string>('');
+  const [manufacturingDate, setManufacturingDate] = useState<string>('');
   const [barcode, setBarcode] = useState('');
   const [unit, setUnit] = useState('un');
   const [description, setDescription] = useState('');
@@ -100,6 +102,8 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
     setCurrentStock(1);
     setMinStock(5);
     setExpirationDate('');
+    setBatchNumber('');
+    setManufacturingDate('');
     setBarcode('');
     setUnit('un');
     setDescription('');
@@ -290,6 +294,8 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
       if (result.currentStock !== undefined && result.currentStock !== null) setCurrentStock(Number(result.currentStock));
       if (result.minStock !== undefined && result.minStock !== null) setMinStock(Number(result.minStock));
       if (result.expirationDate) setExpirationDate(result.expirationDate);
+      if (result.batchNumber || result.lote) setBatchNumber(result.batchNumber || result.lote);
+      if (result.manufacturingDate) setManufacturingDate(result.manufacturingDate);
       if (result.barcode) setBarcode(result.barcode);
       if (result.unit) setUnit(result.unit);
       if (result.description) setDescription(result.description);
@@ -353,6 +359,8 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
         minStock: Number(minStock) || 5,
         unit: unit || 'un',
         expirationDate: expirationDate ? expirationDate.trim() : undefined,
+        batchNumber: batchNumber.trim() || undefined,
+        manufacturingDate: manufacturingDate ? manufacturingDate.trim() : undefined,
         imageUrl: capturedImage || '',
         barcode: barcode.trim() || undefined,
         description: description.trim() || undefined,
@@ -773,37 +781,74 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
               </div>
             </div>
 
-            {/* Field 7: Data de Vencimento do Produto */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-emerald-600" />
-                  Data de Vencimento / Validade
-                </label>
-                <input
-                  type="date"
-                  value={expirationDate}
-                  onChange={(e) => setExpirationDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:bg-white"
-                />
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Essencial para controle de perecíveis, farmácias, bebidas e cosméticos.
-                </p>
+            {/* Field 7: Lote, Fabrico e Validade */}
+            <div className="p-3 bg-amber-50/70 border border-amber-200/90 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-amber-700" />
+                  Lote & Validade (Rastreabilidade)
+                </span>
+                <span className="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                  Opcional
+                </span>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
-                  <FileText className="w-3 h-3 text-slate-500" />
-                  Código de Barras (Opcional)
-                </label>
-                <input
-                  type="text"
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  placeholder="Lido na foto ou falado"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-500 focus:bg-white"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Tag className="w-3 h-3 text-amber-700" />
+                    Nº do Lote
+                  </label>
+                  <input
+                    type="text"
+                    value={batchNumber}
+                    onChange={(e) => setBatchNumber(e.target.value)}
+                    placeholder="Ex: LOT-2026A"
+                    className="w-full bg-white border border-amber-200/90 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-amber-700" />
+                    Data de Fabrico
+                  </label>
+                  <input
+                    type="date"
+                    value={manufacturingDate}
+                    onChange={(e) => setManufacturingDate(e.target.value)}
+                    className="w-full bg-white border border-amber-200/90 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-amber-700" />
+                    Data de Validade
+                  </label>
+                  <input
+                    type="date"
+                    value={expirationDate}
+                    onChange={(e) => setExpirationDate(e.target.value)}
+                    className="w-full bg-white border border-amber-200/90 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
+            </div>
+
+            {/* Field 8: Código de Barras */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <FileText className="w-3 h-3 text-slate-500" />
+                Código de Barras (Opcional)
+              </label>
+              <input
+                type="text"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value)}
+                placeholder="Lido na foto ou falado"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-500 focus:bg-white"
+              />
             </div>
 
             {/* Footer buttons */}

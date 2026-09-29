@@ -76,6 +76,8 @@ export interface Product {
   minStock: number;
   unit: string; // 'un', 'kg', 'cx', 'pct', 'l'
   expirationDate?: string; // Data de Vencimento / Validade (YYYY-MM-DD)
+  batchNumber?: string; // Número / Identificador do Lote
+  manufacturingDate?: string; // Data de Fabrico do Lote (YYYY-MM-DD)
   isActive: boolean;
   createdAt: string;
 }

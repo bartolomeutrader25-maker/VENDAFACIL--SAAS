@@ -19,7 +19,9 @@ import {
   Mic,
   Calendar,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Layers,
+  Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product, Category } from '../types/index.js';
@@ -58,6 +60,8 @@ export const ProductsPage: React.FC = () => {
   const [stockQuantity, setStockQuantity] = useState<number>(0);
   const [minStock, setMinStock] = useState<number>(5);
   const [expirationDate, setExpirationDate] = useState<string>('');
+  const [batchNumber, setBatchNumber] = useState<string>('');
+  const [manufacturingDate, setManufacturingDate] = useState<string>('');
   const [barcode, setBarcode] = useState('');
   const [unit, setUnit] = useState('un');
 
@@ -100,6 +104,8 @@ export const ProductsPage: React.FC = () => {
     setStockQuantity(10);
     setMinStock(5);
     setExpirationDate('');
+    setBatchNumber('');
+    setManufacturingDate('');
     setBarcode('');
     setUnit('un');
     if (categories.length > 0) setCategoryId(categories[0].id);
@@ -117,6 +123,8 @@ export const ProductsPage: React.FC = () => {
     setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
     setMinStock(p.minStock);
     setExpirationDate(p.expirationDate || '');
+    setBatchNumber(p.batchNumber || '');
+    setManufacturingDate(p.manufacturingDate || '');
     setBarcode(p.barcode || '');
     setUnit(p.unit || 'un');
     setIsModalOpen(true);
@@ -133,6 +141,8 @@ export const ProductsPage: React.FC = () => {
     setStockQuantity(p.stockQuantity ?? p.currentStock ?? 0);
     setMinStock(p.minStock);
     setExpirationDate(p.expirationDate || '');
+    setBatchNumber(p.batchNumber ? `${p.batchNumber}-2` : '');
+    setManufacturingDate(p.manufacturingDate || '');
     setBarcode(''); // Clear barcode to avoid duplicates
     setUnit(p.unit || 'un');
     setIsModalOpen(true);
@@ -163,6 +173,8 @@ export const ProductsPage: React.FC = () => {
         currentStock: Number(stockQuantity) || 0,
         minStock: Number(minStock) || 0,
         expirationDate: expirationDate ? expirationDate.trim() : undefined,
+        batchNumber: batchNumber.trim() || undefined,
+        manufacturingDate: manufacturingDate ? manufacturingDate.trim() : undefined,
         barcode: barcode.trim() || undefined,
         unit,
       };
@@ -202,7 +214,8 @@ export const ProductsPage: React.FC = () => {
     return products.filter((p) => {
       const matchSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.barcode && p.barcode.includes(searchTerm));
+        (p.barcode && p.barcode.includes(searchTerm)) ||
+        (p.batchNumber && p.batchNumber.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchCat = selectedCategory === 'all' || p.categoryId === selectedCategory;
       let matchStock = true;
       if (stockFilter === 'low') matchStock = p.stockQuantity <= p.minStock && p.stockQuantity > 0;
@@ -222,6 +235,7 @@ export const ProductsPage: React.FC = () => {
     const headers = [
       'Nome do Produto',
       'Categoria',
+      'Lote',
       'Código de Barras',
       'Preço de Compra (' + curr + ')',
       'Preço de Venda (' + curr + ')',
@@ -229,6 +243,7 @@ export const ProductsPage: React.FC = () => {
       'Stock Actual',
       'Stock Mínimo',
       'Unidade',
+      'Data de Fabrico',
       'Data de Vencimento',
       'Estado Stock'
     ];
@@ -249,6 +264,7 @@ export const ProductsPage: React.FC = () => {
       return [
         escapeCell(p.name),
         escapeCell(p.categoryName || 'Geral'),
+        escapeCell(p.batchNumber || ''),
         escapeCell(p.barcode || ''),
         p.costPrice,
         p.sellingPrice,
@@ -256,6 +272,7 @@ export const ProductsPage: React.FC = () => {
         p.stockQuantity,
         p.minStock,
         escapeCell(p.unit || 'un'),
+        escapeCell(p.manufacturingDate || ''),
         escapeCell(p.expirationDate || ''),
         escapeCell(stockStatus)
       ].join(';');
@@ -566,12 +583,20 @@ export const ProductsPage: React.FC = () => {
                         />
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900 text-sm truncate">{prod.name}</p>
-                          {prod.barcode && (
-                            <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono mt-0.5">
-                              <Barcode className="w-3 h-3" />
-                              <span>{prod.barcode}</span>
-                            </div>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                            {prod.batchNumber && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded font-bold">
+                                <Layers className="w-2.5 h-2.5 text-amber-600" />
+                                <span>Lote: {prod.batchNumber}</span>
+                              </span>
+                            )}
+                            {prod.barcode && (
+                              <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono">
+                                <Barcode className="w-3 h-3" />
+                                <span>{prod.barcode}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -824,29 +849,81 @@ export const ProductsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Data de Validade (Vencimento)</label>
-                    <input
-                      type="date"
-                      value={expirationDate}
-                      onChange={(e) => setExpirationDate(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-semibold focus:outline-none focus:border-emerald-500"
-                    />
+                {/* Controlo de Lote & Rastreabilidade */}
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-amber-500/15 text-amber-800">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-amber-950 text-xs block">Lote & Rastreabilidade</span>
+                        <span className="text-[10px] text-amber-700/80">Gestão de lotes, fabricação e validade</span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-amber-800 font-bold bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                      Opcional
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-1">Código de Barras (Opcional)</label>
-                    <div className="relative">
-                      <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Número do Lote */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Nº do Lote
+                      </label>
+                      <div className="relative">
+                        <Tag className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={batchNumber}
+                          onChange={(e) => setBatchNumber(e.target.value)}
+                          placeholder="Ex: LOT-2026A"
+                          className="w-full bg-white border border-amber-200/90 rounded-xl pl-8 pr-2.5 py-2 text-slate-900 font-bold placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Data de Fabrico */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Data de Fabrico
+                      </label>
                       <input
-                        type="text"
-                        value={barcode}
-                        onChange={(e) => setBarcode(e.target.value)}
-                        placeholder="Ex: 560123456789"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 font-mono focus:outline-none focus:border-emerald-500"
+                        type="date"
+                        value={manufacturingDate}
+                        onChange={(e) => setManufacturingDate(e.target.value)}
+                        className="w-full bg-white border border-amber-200/90 rounded-xl px-2.5 py-2 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                       />
                     </div>
+
+                    {/* Data de Validade */}
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        Data de Validade
+                      </label>
+                      <input
+                        type="date"
+                        value={expirationDate}
+                        onChange={(e) => setExpirationDate(e.target.value)}
+                        className="w-full bg-white border border-amber-200/90 rounded-xl px-2.5 py-2 text-slate-900 font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Código de Barras */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Código de Barras (Opcional)</label>
+                  <div className="relative">
+                    <Barcode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={barcode}
+                      onChange={(e) => setBarcode(e.target.value)}
+                      placeholder="Ex: 560123456789"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-slate-900 font-mono focus:outline-none focus:border-emerald-500"
+                    />
                   </div>
                 </div>
 

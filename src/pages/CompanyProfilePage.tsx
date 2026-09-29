@@ -245,6 +245,7 @@ export const CompanyProfilePage: React.FC<CompanyProfilePageProps> = ({ defaultT
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 };

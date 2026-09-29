@@ -594,7 +594,10 @@ async function startServer() {
         stockQuantity,
         minStock,
         unit,
-        expirationDate
+        expirationDate,
+        batchNumber,
+        manufacturingDate,
+        lote
       } = req.body;
 
       const effectiveCostPrice = Number(costPrice) || 0;
@@ -606,6 +609,9 @@ async function startServer() {
       }
 
       const category = categoryId ? db.categories.get(categoryId) : null;
+      const effectiveBatch = (batchNumber || lote) ? String(batchNumber || lote).trim() : undefined;
+      const effectiveMfg = manufacturingDate ? String(manufacturingDate).trim() : undefined;
+
       const newProduct: Product = {
         id: `prod-${Date.now()}`,
         companyId,
@@ -624,6 +630,8 @@ async function startServer() {
         minStock: Number(minStock) || 5,
         unit: unit || 'un',
         expirationDate: expirationDate ? String(expirationDate).trim() : undefined,
+        batchNumber: effectiveBatch,
+        manufacturingDate: effectiveMfg,
         isActive: true,
         createdAt: new Date().toISOString()
       };
@@ -682,6 +690,12 @@ async function startServer() {
       currentStock: stock,
       stockQuantity: stock,
       expirationDate: req.body.expirationDate !== undefined ? (req.body.expirationDate ? String(req.body.expirationDate).trim() : undefined) : product.expirationDate,
+      batchNumber: req.body.batchNumber !== undefined 
+        ? (req.body.batchNumber ? String(req.body.batchNumber).trim() : undefined)
+        : (req.body.lote !== undefined ? (req.body.lote ? String(req.body.lote).trim() : undefined) : product.batchNumber),
+      manufacturingDate: req.body.manufacturingDate !== undefined 
+        ? (req.body.manufacturingDate ? String(req.body.manufacturingDate).trim() : undefined) 
+        : product.manufacturingDate,
       id: product.id,
       companyId: product.companyId
     };
@@ -1526,75 +1540,205 @@ async function startServer() {
 
     const now = new Date();
     let startDate = new Date(now.getTime() - 30 * 86400000);
+    let endDate: Date | undefined;
 
     if (period === 'today') {
       startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     } else if (period === 'yesterday') {
       startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     } else if (period === '7days') {
       startDate = new Date(now.getTime() - 7 * 86400000);
     } else if (period === '30days') {
       startDate = new Date(now.getTime() - 30 * 86400000);
     } else if (period === 'month') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (period === 'year') {
+      startDate = new Date(now.getFullYear(), 0, 1);
+    } else if (period === 'all') {
+      startDate = new Date(0);
     }
 
-    const filteredSales = sales.filter(s => new Date(s.createdAt) >= startDate);
-    const filteredExpenses = expenses.filter(e => new Date(e.date || e.createdAt) >= startDate);
+    const filteredSales = sales
+      .filter(s => {
+        const d = new Date(s.createdAt);
+        return d >= startDate && (!endDate || d < endDate);
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0);
-    const totalProfit = filteredSales.reduce((sum, s) => sum + s.profit, 0);
-    const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const filteredExpenses = expenses
+      .filter(e => {
+        const d = new Date(e.date || e.createdAt);
+        return d >= startDate && (!endDate || d < endDate);
+      })
+      .sort((a, b) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime());
+
+    const totalSales = filteredSales.reduce((sum, s) => sum + (s.total || 0), 0);
+    const totalProfit = filteredSales.reduce((sum, s) => sum + (s.profit || 0), 0);
+    const costOfGoods = totalSales - totalProfit;
+    const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
     const netProfit = totalProfit - totalExpenses;
+
+    // Daily chart data
+    const dailyMap = new Map<string, { date: string; total: number; profit: number; count: number }>();
+    filteredSales.forEach(s => {
+      const dayKey = s.createdAt.substring(0, 10);
+      const curr = dailyMap.get(dayKey) || { date: dayKey, total: 0, profit: 0, count: 0 };
+      curr.total += s.total || 0;
+      curr.profit += s.profit || 0;
+      curr.count += 1;
+      dailyMap.set(dayKey, curr);
+    });
+    const chartData = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     // Payment methods breakdown
     const paymentMethodsSummary: Record<string, { count: number; total: number }> = {};
     filteredSales.forEach(s => {
-      const method = s.paymentMethod;
+      const method = s.paymentMethod || 'dinheiro';
       if (!paymentMethodsSummary[method]) paymentMethodsSummary[method] = { count: 0, total: 0 };
       paymentMethodsSummary[method].count += 1;
-      paymentMethodsSummary[method].total += s.total;
+      paymentMethodsSummary[method].total += (s.total || 0);
     });
+
+    const paymentMethods = Object.entries(paymentMethodsSummary).map(([method, data]) => ({
+      method,
+      count: data.count,
+      total: data.total,
+      percentage: totalSales > 0 ? Math.round((data.total / totalSales) * 100) : 0
+    })).sort((a, b) => b.total - a.total);
+
+    // Expenses Categories breakdown
+    const expenseCategoriesSummary: Record<string, { count: number; total: number }> = {};
+    filteredExpenses.forEach(e => {
+      const cat = e.category || 'outros';
+      if (!expenseCategoriesSummary[cat]) expenseCategoriesSummary[cat] = { count: 0, total: 0 };
+      expenseCategoriesSummary[cat].count += 1;
+      expenseCategoriesSummary[cat].total += (e.amount || 0);
+    });
+
+    const expensesByCategory = Object.entries(expenseCategoriesSummary).map(([category, data]) => ({
+      category,
+      count: data.count,
+      total: data.total,
+      percentage: totalExpenses > 0 ? Math.round((data.total / totalExpenses) * 100) : 0
+    })).sort((a, b) => b.total - a.total);
 
     // Top Selling Products
     const productStats = new Map<string, { name: string; quantity: number; revenue: number; profit: number }>();
     filteredSales.forEach(s => {
-      s.items.forEach(it => {
+      s.items?.forEach(it => {
         const curr = productStats.get(it.productId) || { name: it.productName, quantity: 0, revenue: 0, profit: 0 };
-        curr.quantity += it.quantity;
-        curr.revenue += it.subtotal;
-        curr.profit += (it.unitPrice - it.costPrice) * it.quantity;
+        curr.quantity += it.quantity || 0;
+        curr.revenue += it.subtotal || 0;
+        curr.profit += ((it.unitPrice || 0) - (it.costPrice || 0)) * (it.quantity || 0);
         productStats.set(it.productId, curr);
       });
     });
 
     const topSelling = Array.from(productStats.values()).sort((a, b) => b.revenue - a.revenue);
+    const topProducts = topSelling.map(p => ({
+      name: p.name,
+      totalRevenue: p.revenue,
+      totalQuantity: p.quantity,
+      profit: p.profit
+    }));
+
     const lowSelling = products
       .map(p => {
         const stat = productStats.get(p.id);
         return {
           name: p.name,
-          currentStock: p.currentStock,
+          currentStock: p.currentStock || 0,
           soldQuantity: stat ? stat.quantity : 0,
           revenue: stat ? stat.revenue : 0
         };
       })
       .sort((a, b) => a.soldQuantity - b.soldQuantity);
 
+    // Stock & Inventory summary
+    let totalStockUnits = 0;
+    let totalStockCostValue = 0;
+    let totalStockRetailValue = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+    let normalStockCount = 0;
+    let batchesCount = 0;
+    let expiringSoonCount = 0;
+    let expiredCount = 0;
+
+    const thirtyDaysFromNow = new Date(now.getTime() + 30 * 86400000).toISOString().substring(0, 10);
+    const todayStr = now.toISOString().substring(0, 10);
+
+    products.forEach(p => {
+      const stock = Number(p.currentStock) || 0;
+      const cost = Number(p.costPrice) || 0;
+      const sale = Number(p.salePrice) || 0;
+      totalStockUnits += stock;
+      totalStockCostValue += stock * cost;
+      totalStockRetailValue += stock * sale;
+
+      if (stock <= 0) {
+        outOfStockCount++;
+      } else if (stock <= (p.minStock || 0)) {
+        lowStockCount++;
+      } else {
+        normalStockCount++;
+      }
+
+      if (p.batchNumber) {
+        batchesCount++;
+      }
+
+      if (p.expirationDate) {
+        if (p.expirationDate < todayStr) {
+          expiredCount++;
+        } else if (p.expirationDate <= thirtyDaysFromNow) {
+          expiringSoonCount++;
+        }
+      }
+    });
+
+    const stockSummary = {
+      totalProducts: products.length,
+      totalStockUnits,
+      totalStockCostValue,
+      totalStockRetailValue,
+      potentialStockProfit: Math.max(0, totalStockRetailValue - totalStockCostValue),
+      lowStockCount,
+      outOfStockCount,
+      normalStockCount,
+      batchesCount,
+      expiringSoonCount,
+      expiredCount
+    };
+
     res.json({
       period,
       summary: {
         totalSales,
+        grossRevenue: totalSales,
+        costOfGoods,
+        grossProfit: totalProfit,
         totalProfit,
         totalExpenses,
         netProfit,
         salesCount: filteredSales.length,
-        averageTicket: filteredSales.length > 0 ? Math.round(totalSales / filteredSales.length) : 0
+        totalSalesCount: filteredSales.length,
+        averageTicket: filteredSales.length > 0 ? Math.round(totalSales / filteredSales.length) : 0,
+        avgTicket: filteredSales.length > 0 ? Math.round(totalSales / filteredSales.length) : 0,
+        profitMargin: totalSales > 0 ? Math.round((netProfit / totalSales) * 100) : 0
       },
-      paymentMethods: paymentMethodsSummary,
+      chartData,
+      paymentMethods,
+      paymentMethodsSummary,
+      expensesByCategory,
       topSelling,
+      topProducts,
       lowSelling,
-      salesList: filteredSales
+      salesList: filteredSales,
+      expensesList: filteredExpenses,
+      productsList: products,
+      stockSummary
     });
   });
 

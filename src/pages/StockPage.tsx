@@ -10,13 +10,15 @@ import {
   Package,
   Calendar,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product, StockMovement, StockMovementType } from '../types/index.js';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
+import { generateStockReportPdf, downloadPdf } from '../lib/pdfReportGenerator.js';
 
 export const StockPage: React.FC = () => {
   const { company } = useAuth();
@@ -120,6 +122,27 @@ export const StockPage: React.FC = () => {
     });
   }, [movements, searchTerm]);
 
+  const handleExportStockPdf = () => {
+    try {
+      const summary = {
+        totalProducts: products.length,
+        totalStockUnits: products.reduce((acc, p) => acc + (p.currentStock || 0), 0),
+        totalStockCostValue: totalCostValuation,
+        totalStockRetailValue: totalSalesPotential,
+        potentialStockProfit: Math.max(0, totalSalesPotential - totalCostValuation),
+        lowStockCount,
+        outOfStockCount: products.filter(p => (p.currentStock || 0) <= 0).length,
+        normalStockCount: products.filter(p => (p.currentStock || 0) > p.minStock).length,
+        batchesCount: products.filter(p => !!p.batchNumber).length,
+      };
+      const doc = generateStockReportPdf(company, { products, summary });
+      downloadPdf(doc, `Relatorio_Estoque_Inventario_${new Date().toISOString().substring(0, 10)}.pdf`);
+      success('Relatório de Estoque em PDF descarregado!');
+    } catch (e: any) {
+      error('Erro ao gerar PDF de estoque');
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* Top Header */}
@@ -133,17 +156,25 @@ export const StockPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExportStockPdf}
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors cursor-pointer"
+            title="Exportar inventário físico e lotes em PDF"
+          >
+            <Download className="w-4 h-4 text-slate-500" />
+            <span>PDF Estoque</span>
+          </button>
           <button
             onClick={() => handleOpenMovementModal('entrada')}
-            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all"
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
           >
             <ArrowDownLeft className="w-4 h-4" />
             <span>+ Entrada de Mercadoria</span>
           </button>
           <button
             onClick={() => handleOpenMovementModal('saida')}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors"
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors cursor-pointer"
           >
             <ArrowUpRight className="w-4 h-4" />
             <span>Saída / Ajuste</span>

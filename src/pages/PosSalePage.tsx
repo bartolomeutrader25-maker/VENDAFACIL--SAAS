@@ -128,6 +128,7 @@ export const PosSalePage: React.FC = () => {
       const matchSearch =
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.barcode && p.barcode.includes(searchTerm)) ||
+        (p.batchNumber && p.batchNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchCat && matchSearch && p.isActive;
     });
