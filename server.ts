@@ -1,4 +1,8 @@
+// Clean tsx global pollution that breaks vite-plugin-pwa module resolution
+delete (globalThis as any).__dirname;
+
 import express, { Request, Response, NextFunction } from 'express';
+import http from 'http';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db.js';
@@ -34,7 +38,7 @@ interface AuthenticatedRequest extends Request {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
@@ -2190,10 +2194,17 @@ async function startServer() {
     res.json({ status: 'ok', service: 'VendaFácil SaaS Backend', version: '1.0.0' });
   });
 
+  const httpServer = http.createServer(app);
+
   // Vite Middleware Integration
   if (process.env.NODE_ENV !== 'production') {
+    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: isHmrDisabled ? false : { server: httpServer, clientPort: 443 },
+        watch: isHmrDisabled ? null : {},
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -2205,7 +2216,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 VendaFácil Server running on http://localhost:${PORT}`);
   });
 }

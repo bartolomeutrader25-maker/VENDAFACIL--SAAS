@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="cart" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- Safe Zone Graphic -->
+  <g transform="translate(64, 64) scale(0.75)">
+    <!-- Cart / POS Icon -->
+    <path d="M70 120 h40 l45 180 h210 l40 -140 h-270" fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Cart Wheels -->
+    <circle cx="170" cy="360" r="26" fill="#34d399"/>
+    <circle cx="340" cy="360" r="26" fill="#34d399"/>
+    <!-- Lightning / Checkmark for speed & offline reliability -->
+    <path d="M280 160 L240 230 L300 230 L260 300" fill="none" stroke="#fbbf24" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

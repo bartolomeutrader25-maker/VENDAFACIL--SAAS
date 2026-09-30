@@ -30,6 +30,8 @@ import { useAuth } from '../../context/AuthContext.js';
 import { useToast } from '../../context/ToastContext.js';
 import { api } from '../../lib/api.js';
 import { TrialBanner } from '../TrialBanner.js';
+import { PWAInstallButton } from '../common/PWAInstallButton.js';
+import { OfflineIndicator } from '../common/OfflineIndicator.js';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -360,6 +362,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <span className="sm:hidden">Tour</span>
             </button>
 
+            {/* In-App PWA Install Button */}
+            <PWAInstallButton />
+
             {/* Notifications Icon */}
             <button
               onClick={() => navigateTo('notificacoes')}
@@ -614,6 +619,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Global Offline Indicator & Sync Queue */}
+      <OfflineIndicator />
     </div>
   );
 };

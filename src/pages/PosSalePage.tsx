@@ -30,6 +30,7 @@ import { BarcodeScannerModal } from '../components/common/BarcodeScannerModal.js
 import { ProductThumbnail } from '../components/common/ProductThumbnail.js';
 import { PosSoundSettingsModal } from '../components/common/PosSoundSettingsModal.js';
 import { posAudio } from '../lib/posAudio.js';
+import { offlineSalesManager } from '../services/offlineSalesManager.js';
 
 interface CartItem {
   product: Product;
@@ -82,8 +83,16 @@ export const PosSalePage: React.FC = () => {
       setProducts(prodList);
       setCategories(catList);
       setCustomers(custList);
+      offlineSalesManager.cacheProducts(prodList);
     } catch (e: any) {
-      error('Erro ao carregar dados do PDV');
+      // In offline mode, attempt to load cached products
+      const cachedProds = offlineSalesManager.getCachedProducts();
+      if (cachedProds && cachedProds.length > 0) {
+        setProducts(cachedProds);
+        info('Modo Offline: Catálogo de produtos carregado da memória local.');
+      } else {
+        error('Erro ao carregar dados do PDV');
+      }
     }
   };
 
@@ -293,7 +302,32 @@ export const PosSalePage: React.FC = () => {
         notes,
       };
 
-      const result = await api.createSale(salePayload);
+      let result: Sale;
+      const isCurrentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+      if (!isCurrentlyOnline) {
+        // Direct offline registration
+        result = offlineSalesManager.enqueueSale(salePayload, user, company, products);
+        info('Modo Offline: Venda registada localmente! O recibo foi gerado e será sincronizado quando houver ligação.');
+      } else {
+        try {
+          result = await api.createSale(salePayload);
+        } catch (netErr: any) {
+          const isNetError =
+            !navigator.onLine ||
+            netErr?.message?.toLowerCase().includes('failed to fetch') ||
+            netErr?.message?.toLowerCase().includes('network') ||
+            netErr?.message?.toLowerCase().includes('offline');
+
+          if (isNetError) {
+            result = offlineSalesManager.enqueueSale(salePayload, user, company, products);
+            info('Ligação perdida. Venda guardada localmente com segurança em modo offline!');
+          } else {
+            throw netErr;
+          }
+        }
+      }
+
       setCompletedSale(result);
       setLastSale(result);
 
