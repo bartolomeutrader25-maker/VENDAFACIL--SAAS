@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Sparkles, Camera } from 'lucide-react';
+import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Sparkles, Camera, Wand2 } from 'lucide-react';
 import { ProductThumbnail } from './ProductThumbnail.js';
+import { ProductImageAiStudioModal } from './ProductImageAiStudioModal.js';
 
 interface ProductImageUploaderProps {
   imageUrl: string;
@@ -51,6 +52,7 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
 }) => {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [showSampleGallery, setShowSampleGallery] = useState(false);
+  const [isAiStudioOpen, setIsAiStudioOpen] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -174,6 +176,16 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
 
             <button
               type="button"
+              onClick={() => setIsAiStudioOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200/90 text-indigo-700 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Criar foto profissional ou editar imagem com IA Gemini 3.1"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+              <span>✨ Criar / Editar com IA</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowSampleGallery(!showSampleGallery)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 hover:border-amber-500 hover:text-amber-700 text-slate-600 text-xs font-semibold transition-all shadow-2xs"
             >
@@ -256,6 +268,16 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
           </div>
         </div>
       )}
+
+      {/* Gemini 3.1 Flash Image AI Studio Modal */}
+      <ProductImageAiStudioModal
+        isOpen={isAiStudioOpen}
+        onClose={() => setIsAiStudioOpen(false)}
+        onApplyImage={(newImg) => onChange(newImg)}
+        currentImageUrl={imageUrl}
+        productName={productName}
+        categoryName={categoryName}
+      />
     </div>
   );
 };

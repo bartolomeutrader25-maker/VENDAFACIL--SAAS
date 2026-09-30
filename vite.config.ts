@@ -1,12 +1,29 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, Plugin} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+function silenceViteHmrPlugin(): Plugin {
+  return {
+    name: 'silence-vite-hmr-client',
+    transform(code: string, id: string) {
+      if (id.includes('client.mjs') && process.env.DISABLE_HMR === 'true') {
+        return code
+          .replace('console.debug("[vite] connecting...");', '// [vite] HMR disabled in AI Studio environment')
+          .replace(
+            /const transport = normalizeModuleRunnerTransport\([\s\S]*?\n\);/,
+            'const transport = { connect() { return Promise.resolve(); }, disconnect() { return Promise.resolve(); }, send() { return Promise.resolve(); } };'
+          );
+      }
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
     plugins: [
+      silenceViteHmrPlugin(),
       react(),
       tailwindcss(),
       VitePWA({
@@ -46,6 +63,7 @@ export default defineConfig(() => {
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB limit for single bundle
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
+          importScripts: ['/sw-sync-handler.js'],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -94,7 +112,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: process.env.DISABLE_HMR !== 'true',
+          enabled: false,
           type: 'module',
         },
       }),

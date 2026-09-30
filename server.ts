@@ -10,7 +10,8 @@ import {
   askBusinessAssistant,
   BusinessDataSummary,
   extractProductFromAudioAndImage,
-  extractHeuristicallyFromTranscript
+  extractHeuristicallyFromTranscript,
+  generateOrEditProductImage
 } from './server/gemini.js';
 import {
   Product,
@@ -581,6 +582,55 @@ async function startServer() {
     res.json(products);
   });
 
+  // AI Create & Edit Product Image endpoint using gemini-3.1-flash-image-preview
+  app.post('/api/products/ai-image', authMiddleware, requireActiveSubscription, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const {
+        prompt,
+        mode = 'create',
+        sourceImageBase64,
+        aspectRatio = '1:1',
+        productContext,
+        productId,
+      } = req.body;
+
+      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'Por favor indique uma descrição ou instrução em texto para a imagem.' });
+      }
+
+      const result = await generateOrEditProductImage({
+        prompt: prompt.trim(),
+        mode,
+        sourceImageBase64,
+        aspectRatio,
+        productContext,
+      });
+
+      let updatedProduct: Product | undefined;
+      if (productId && db.products.has(productId)) {
+        const prod = db.products.get(productId)!;
+        if (prod.companyId === req.companyId || req.user?.isSuperAdmin) {
+          prod.imageUrl = result.imageUrl;
+          db.products.set(prod.id, prod);
+          updatedProduct = prod;
+        }
+      }
+
+      res.json({
+        success: true,
+        imageUrl: result.imageUrl,
+        text: result.text,
+        promptUsed: result.promptUsed,
+        updatedProduct,
+      });
+    } catch (err: any) {
+      console.error('[AI Product Image] Erro ao gerar imagem:', err);
+      res.status(500).json({
+        error: err?.message || 'Falha ao processar imagem com a IA. Verifique as configurações da API Gemini.',
+      });
+    }
+  });
+
   app.post('/api/products', authMiddleware, requireActiveSubscription, (req: AuthenticatedRequest, res: Response) => {
     try {
       const companyId = req.companyId!;
@@ -915,8 +965,19 @@ async function startServer() {
         discount = 0,
         paidAmount = 0,
         dueDate,
-        notes
+        notes,
+        offlineLocalId
       } = req.body;
+
+      // Idempotency check for offline background sync
+      if (offlineLocalId) {
+        const existingSale = Array.from(db.sales.values()).find(
+          (s: any) => s.offlineLocalId === offlineLocalId || (s.companyId === companyId && s.notes?.includes(offlineLocalId))
+        );
+        if (existingSale) {
+          return res.json(existingSale);
+        }
+      }
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'A venda precisa de pelo menos 1 produto.' });
@@ -1018,6 +1079,9 @@ async function startServer() {
         notes: notes || '',
         createdAt: new Date().toISOString()
       };
+      if (offlineLocalId) {
+        (newSale as any).offlineLocalId = offlineLocalId;
+      }
       db.sales.set(newSale.id, newSale);
 
       // Update customer stats if customer assigned
@@ -2191,7 +2255,12 @@ async function startServer() {
 
   // Health check
   app.get('/api/health', (req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'VendaFácil SaaS Backend', version: '1.0.0' });
+    res.json({
+      status: 'ok',
+      service: 'VendaFácil SaaS Backend',
+      version: '1.0.0',
+      disableHmr: process.env.DISABLE_HMR,
+    });
   });
 
   const httpServer = http.createServer(app);

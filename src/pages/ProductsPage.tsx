@@ -21,7 +21,8 @@ import {
   Download,
   FileSpreadsheet,
   Layers,
-  Tag
+  Tag,
+  Wand2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Product, Category } from '../types/index.js';
@@ -30,6 +31,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
 import { ProductThumbnail } from '../components/common/ProductThumbnail.js';
 import { ProductImageUploader } from '../components/common/ProductImageUploader.js';
+import { ProductImageAiStudioModal } from '../components/common/ProductImageAiStudioModal.js';
 import { CategoryManagementModal } from '../components/common/CategoryManagementModal.js';
 import { AiAudioProductRegistrationModal } from '../components/AiAudioProductRegistrationModal.js';
 
@@ -48,8 +50,30 @@ export const ProductsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAiAudioModalOpen, setIsAiAudioModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [isAiImageModalOpen, setIsAiImageModalOpen] = useState(false);
+  const [selectedProductForAiImage, setSelectedProductForAiImage] = useState<Product | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isDuplicating, setIsDuplicating] = useState(false);
+
+  const openAiImageStudioForProduct = (prod: Product) => {
+    setSelectedProductForAiImage(prod);
+    setIsAiImageModalOpen(true);
+  };
+
+  const handleApplyAiImageToProduct = async (newImageUrl: string) => {
+    if (!selectedProductForAiImage) return;
+    try {
+      await api.updateProduct(selectedProductForAiImage.id, {
+        imageUrl: newImageUrl,
+      });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === selectedProductForAiImage.id ? { ...p, imageUrl: newImageUrl } : p))
+      );
+      success(`Imagem de ${selectedProductForAiImage.name} atualizada com sucesso!`);
+    } catch {
+      error('Erro ao salvar imagem do produto');
+    }
+  };
 
   // Form Fields
   const [name, setName] = useState('');
@@ -575,12 +599,22 @@ export const ProductsPage: React.FC = () => {
                   <tr key={prod.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3.5 sm:px-5">
                       <div className="flex items-center gap-3">
-                        <ProductThumbnail
-                          imageUrl={prod.imageUrl}
-                          name={prod.name}
-                          categoryName={prod.categoryName}
-                          size="md"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => openAiImageStudioForProduct(prod)}
+                          className="group relative cursor-pointer rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          title="Clique para Criar ou Editar imagem com IA (Gemini 3.1)"
+                        >
+                          <ProductThumbnail
+                            imageUrl={prod.imageUrl}
+                            name={prod.name}
+                            categoryName={prod.categoryName}
+                            size="md"
+                          />
+                          <div className="absolute inset-0 rounded-xl bg-black/45 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                            <Wand2 className="w-3.5 h-3.5 text-indigo-200" />
+                          </div>
+                        </button>
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900 text-sm truncate">{prod.name}</p>
                           <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
@@ -657,6 +691,13 @@ export const ProductsPage: React.FC = () => {
                     </td>
                     <td className="p-3.5 sm:px-5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => openAiImageStudioForProduct(prod)}
+                          className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                          title="Criar / Editar Imagem com IA (Gemini 3.1 Flash)"
+                        >
+                          <Wand2 className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => openDuplicateModal(prod)}
                           className="p-1.5 text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
@@ -971,6 +1012,22 @@ export const ProductsPage: React.FC = () => {
         onCategoriesChanged={loadData}
         onSelectCategory={(newCatId) => setCategoryId(newCatId)}
       />
+
+      {/* Product Image AI Studio Modal (Gemini 3.1 Flash Image Preview) */}
+      {selectedProductForAiImage && (
+        <ProductImageAiStudioModal
+          isOpen={isAiImageModalOpen}
+          onClose={() => {
+            setIsAiImageModalOpen(false);
+            setSelectedProductForAiImage(null);
+          }}
+          onApplyImage={handleApplyAiImageToProduct}
+          currentImageUrl={selectedProductForAiImage.imageUrl}
+          productName={selectedProductForAiImage.name}
+          categoryName={selectedProductForAiImage.categoryName}
+          productId={selectedProductForAiImage.id}
+        />
+      )}
     </div>
   );
 };

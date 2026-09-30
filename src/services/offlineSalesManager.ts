@@ -1,4 +1,12 @@
 import { Sale, Product } from '../types/index.js';
+import {
+  saveOfflineSaleToIDB,
+  getPendingOfflineSalesFromIDB,
+  removeOfflineSaleFromIDB,
+  saveOfflineAuthToIDB,
+  registerBackgroundSync,
+} from '../lib/offlineIndexedDB.js';
+import { firestoreSyncService } from './firestoreSyncService.js';
 
 export interface PendingOfflineSale {
   id: string;
@@ -17,16 +25,79 @@ class OfflineSalesManager {
   private queue: PendingOfflineSale[] = [];
   private isSyncing: boolean = false;
   private listeners: Array<(queue: PendingOfflineSale[]) => void> = [];
+  private syncListeners: Array<(isSyncing: boolean) => void> = [];
+  private lastSyncTimestamp: string | null = null;
 
   constructor() {
     this.loadQueue();
-
-    // Listen to network restoration
     if (typeof window !== 'undefined') {
+      this.lastSyncTimestamp = localStorage.getItem('vf_last_sync_time');
+
+      // Hydrate queue from IndexedDB to ensure consistency with Service Worker
+      this.syncQueueFromIndexedDB();
+
+      // Listen to network restoration (immediate fallback alongside Service Worker sync)
       window.addEventListener('online', () => {
-        console.log('[OfflineSalesManager] Conexão restabelecida. A iniciar sincronização automática...');
+        console.log('[OfflineSalesManager] Conexão de rede restabelecida. Disparando sincronização...');
+        this.triggerBackgroundSync();
         this.syncPendingSales();
       });
+
+      // Listen to Service Worker Background Sync broadcasts
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', async (event) => {
+          if (event.data && event.data.type === 'BACKGROUND_SYNC_COMPLETED') {
+            console.log('[OfflineSalesManager] Background Sync do Service Worker concluído:', event.data);
+
+            // Replicate synced sales to Cloud Firestore
+            if (Array.isArray(event.data.syncedSales)) {
+              for (const s of event.data.syncedSales) {
+                if (s.savedSale && s.companyId) {
+                  firestoreSyncService.persistSaleToFirestore(s.companyId, s.savedSale, s.localId).catch((err) => {
+                    console.warn('[OfflineSalesManager] Falha ao persistir venda do SW no Firestore:', err);
+                  });
+                }
+              }
+            }
+
+            await this.syncQueueFromIndexedDB();
+            this.lastSyncTimestamp = event.data.timestamp || new Date().toISOString();
+            try {
+              localStorage.setItem('vf_last_sync_time', this.lastSyncTimestamp!);
+            } catch {}
+            this.notifyListeners();
+            this.notifySyncListeners();
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Synchronizes in-memory and localStorage queue with IndexedDB
+   */
+  public async syncQueueFromIndexedDB() {
+    if (typeof window === 'undefined') return;
+    try {
+      const idbSales = await getPendingOfflineSalesFromIDB();
+      if (Array.isArray(idbSales)) {
+        // Merge or replace
+        const idbMap = new Map(idbSales.map((s) => [s.id, s]));
+        // Keep pending items
+        this.queue = idbSales.map((s) => ({
+          id: s.id,
+          localId: s.localId,
+          createdAt: s.createdAt,
+          payload: s.payload,
+          salePreview: s.salePreview,
+          synced: s.synced,
+          syncError: s.syncError,
+        }));
+        localStorage.setItem(QUEUE_KEY, JSON.stringify(this.queue));
+        this.notifyListeners();
+      }
+    } catch (err) {
+      console.warn('[OfflineSalesManager] Aviso ao sincronizar com IndexedDB:', err);
     }
   }
 
@@ -61,8 +132,28 @@ class OfflineSalesManager {
     };
   }
 
+  public subscribeSync(callback: (isSyncing: boolean) => void): () => void {
+    this.syncListeners.push(callback);
+    callback(this.isSyncing);
+    return () => {
+      this.syncListeners = this.syncListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  public getIsSyncing(): boolean {
+    return this.isSyncing;
+  }
+
+  public getLastSyncTime(): string | null {
+    return this.lastSyncTimestamp;
+  }
+
   private notifyListeners() {
     this.listeners.forEach((cb) => cb([...this.queue]));
+  }
+
+  private notifySyncListeners() {
+    this.syncListeners.forEach((cb) => cb(this.isSyncing));
   }
 
   public getPendingQueue(): PendingOfflineSale[] {
@@ -125,7 +216,7 @@ class OfflineSalesManager {
   }
 
   /**
-   * Enqueues an offline sale, generates a full client-side Sale receipt object
+   * Enqueues an offline sale, saves to IndexedDB and registers background sync
    */
   public enqueueSale(
     payload: any,
@@ -185,7 +276,7 @@ class OfflineSalesManager {
       paymentStatus: 'pago',
       paidAmount: payload.paidAmount !== undefined ? Number(payload.paidAmount) : total,
       changeAmount: payload.changeAmount !== undefined ? Number(payload.changeAmount) : 0,
-      notes: (payload.notes ? payload.notes + ' ' : '') + '[Registo Offline]',
+      notes: (payload.notes ? payload.notes + ' ' : '') + `[Offline ID: ${localId}]`,
       createdAt: new Date().toISOString(),
     };
 
@@ -205,14 +296,48 @@ class OfflineSalesManager {
     this.queue.unshift(pendingItem);
     this.saveQueue();
 
-    // Decrement local inventory
+    // 1. Decrement local inventory
     this.updateLocalProductStock(payload.items || []);
+
+    // 2. Persist to IndexedDB so the Service Worker has access
+    saveOfflineSaleToIDB(pendingItem).catch((err) =>
+      console.warn('[OfflineSalesManager] Falha ao gravar no IndexedDB:', err)
+    );
+
+    // 3. Save auth credentials in IndexedDB for the Service Worker
+    const token = localStorage.getItem('vf_auth_token') || undefined;
+    const companyId = company?.id || localStorage.getItem('vf_selected_company_id') || undefined;
+    const userId = currentUser?.id || localStorage.getItem('vf_user_id') || undefined;
+    saveOfflineAuthToIDB({ token, companyId, userId });
+
+    // 4. Register Background Sync with Service Worker
+    registerBackgroundSync('sync-offline-sales');
 
     return salePreview;
   }
 
   /**
-   * Syncs pending sales to the server API
+   * Prompts the Service Worker to run background sync or registers the sync tag
+   */
+  public async triggerBackgroundSync(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+
+    // 1. Try SyncManager
+    const registered = await registerBackgroundSync('sync-offline-sales');
+
+    // 2. Post direct message to Service Worker controller
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'TRIGGER_BACKGROUND_SYNC',
+      });
+      return true;
+    }
+
+    return registered;
+  }
+
+  /**
+   * Syncs pending sales to the server API and replicates to Cloud Firestore
    */
   public async syncPendingSales(apiCreateSaleFn?: (payload: any) => Promise<any>): Promise<{
     syncedCount: number;
@@ -232,41 +357,62 @@ class OfflineSalesManager {
     }
 
     this.isSyncing = true;
+    this.notifySyncListeners();
     let syncedCount = 0;
     let failedCount = 0;
 
-    // Use default fetch if fn not passed
-    const executeSync = apiCreateSaleFn || (async (payload: any) => {
-      const token = localStorage.getItem('vf_auth_token');
-      const companyId = localStorage.getItem('vf_selected_company_id');
-      const userId = localStorage.getItem('vf_user_id');
+    // Default fetch execution
+    const executeSync =
+      apiCreateSaleFn ||
+      (async (payload: any) => {
+        const token = localStorage.getItem('vf_auth_token');
+        const companyId = localStorage.getItem('vf_selected_company_id');
+        const userId = localStorage.getItem('vf_user_id');
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (companyId) headers['x-company-id'] = companyId;
-      if (userId) headers['x-user-id'] = userId;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (token) headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+        if (companyId) headers['x-company-id'] = companyId;
+        if (userId) headers['x-user-id'] = userId;
 
-      const res = await fetch('/api/sales', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
+        const res = await fetch('/api/sales', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Falha ao sincronizar venda');
+        }
+        return res.json();
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Falha ao sincronizar venda');
-      }
-      return res.json();
-    });
 
     for (const item of pending) {
       try {
-        await executeSync(item.payload);
+        const savedSale = await executeSync(item.payload);
         item.synced = true;
         item.syncError = undefined;
         syncedCount++;
+
+        // Remove from IndexedDB
+        await removeOfflineSaleFromIDB(item.id).catch(() => {});
+
+        // Replicate directly to Cloud Firestore
+        const compId =
+          item.salePreview?.companyId ||
+          savedSale?.companyId ||
+          localStorage.getItem('vf_selected_company_id') ||
+          'comp-default';
+
+        if (savedSale && compId) {
+          firestoreSyncService
+            .persistSaleToFirestore(compId, savedSale, item.localId)
+            .catch((err) => {
+              console.warn('[OfflineSalesManager] Aviso na persistência Cloud Firestore:', err);
+            });
+        }
       } catch (err: any) {
         console.error(`[OfflineSalesManager] Falha ao sincronizar venda ${item.localId}:`, err);
         item.syncError = err?.message || 'Erro de sincronização';
@@ -278,6 +424,14 @@ class OfflineSalesManager {
     this.queue = this.queue.filter((item) => !item.synced);
     this.saveQueue();
     this.isSyncing = false;
+    this.lastSyncTimestamp = new Date().toISOString();
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('vf_last_sync_time', this.lastSyncTimestamp);
+      } catch {}
+    }
+    this.notifySyncListeners();
 
     return { syncedCount, failedCount };
   }

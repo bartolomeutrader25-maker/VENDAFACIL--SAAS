@@ -503,3 +503,132 @@ Retorne estritamente um objeto JSON com as chaves:
   throw new Error(`Falha temporária no reconhecimento por IA (servidores com alta procura). Por favor tente novamente dentro de instantes.`);
 }
 
+export interface GenerateProductImageOptions {
+  prompt: string;
+  mode?: 'create' | 'edit';
+  sourceImageBase64?: string;
+  aspectRatio?: '1:1' | '3:4' | '4:3' | '16:9' | '9:16';
+  productContext?: {
+    name?: string;
+    category?: string;
+    description?: string;
+  };
+}
+
+export async function generateOrEditProductImage(
+  options: GenerateProductImageOptions
+): Promise<{ imageUrl: string; text?: string; promptUsed: string }> {
+  const ai = getAiClient();
+  if (!ai) {
+    throw new Error('Chave da API Gemini não configurada no servidor (GEMINI_API_KEY).');
+  }
+
+  const {
+    prompt,
+    mode = 'create',
+    sourceImageBase64,
+    aspectRatio = '1:1',
+    productContext,
+  } = options;
+
+  let finalPrompt = prompt.trim();
+  if (productContext?.name && !prompt.toLowerCase().includes(productContext.name.toLowerCase())) {
+    finalPrompt = `${prompt} (Produto: ${productContext.name}${productContext.category ? `, Categoria: ${productContext.category}` : ''})`;
+  }
+
+  // Requested model: gemini-3.1-flash-image-preview
+  const primaryModel = 'gemini-3.1-flash-image-preview';
+  const fallbackModel = 'gemini-3.1-flash-image';
+
+  const parts: any[] = [];
+
+  if (mode === 'edit' && sourceImageBase64) {
+    let mimeType = 'image/jpeg';
+    let rawBase64 = sourceImageBase64;
+    const match = sourceImageBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      rawBase64 = match[2];
+    } else {
+      rawBase64 = sourceImageBase64.replace(/^data:image\/[a-z0-9-+.]+;base64,/, '');
+    }
+
+    parts.push({
+      inlineData: {
+        data: rawBase64,
+        mimeType: mimeType || 'image/jpeg',
+      },
+    });
+    parts.push({
+      text: `Instrução detalhada de edição profissional de fotografia do produto: ${finalPrompt}. Realize as alterações mantendo o produto com excelente acabamento comercial para catálogo e PDV.`,
+    });
+  } else {
+    parts.push({
+      text: `Fotografia comercial profissional de estúdio para catálogo de produtos e sistema de vendas PDV: ${finalPrompt}. Iluminação limpa e suave de estúdio, produto centralizado e focado, cores vibrantes, apresentação premium sem marcas d'água indesejadas.`,
+    });
+  }
+
+  const config: any = {
+    imageConfig: {
+      aspectRatio: aspectRatio,
+      imageSize: '1K',
+    },
+  };
+
+  let response: any;
+  try {
+    response = await ai.models.generateContent({
+      model: primaryModel,
+      contents: { parts },
+      config,
+    });
+  } catch (err: any) {
+    console.warn(`[GeminiImage] Tentativa inicial com ${primaryModel} gerou aviso, tentando ${fallbackModel}:`, err?.message || err);
+    try {
+      response = await ai.models.generateContent({
+        model: fallbackModel,
+        contents: { parts },
+        config,
+      });
+    } catch (fallbackErr: any) {
+      console.warn(`[GeminiImage] Tentativa com ${fallbackModel} falhou, tentando gemini-3.1-flash-lite-image:`, fallbackErr?.message || fallbackErr);
+      response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite-image',
+        contents: { parts },
+        config: {
+          imageConfig: {
+            aspectRatio: aspectRatio,
+          },
+        },
+      });
+    }
+  }
+
+  let generatedDataUrl = '';
+  let responseText = '';
+
+  const candidates = response?.candidates;
+  if (candidates && candidates.length > 0) {
+    const candidateParts = candidates[0]?.content?.parts || [];
+    for (const part of candidateParts) {
+      if (part.inlineData && part.inlineData.data) {
+        const mime = part.inlineData.mimeType || 'image/png';
+        generatedDataUrl = `data:${mime};base64,${part.inlineData.data}`;
+      } else if (part.text) {
+        responseText += part.text;
+      }
+    }
+  }
+
+  if (!generatedDataUrl) {
+    throw new Error('Nenhuma imagem foi gerada pelo modelo. Por favor tente com uma descrição mais detalhada.');
+  }
+
+  return {
+    imageUrl: generatedDataUrl,
+    text: responseText,
+    promptUsed: finalPrompt,
+  };
+}
+
+

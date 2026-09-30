@@ -31,7 +31,7 @@ import { useToast } from '../../context/ToastContext.js';
 import { api } from '../../lib/api.js';
 import { TrialBanner } from '../TrialBanner.js';
 import { PWAInstallButton } from '../common/PWAInstallButton.js';
-import { OfflineIndicator } from '../common/OfflineIndicator.js';
+import { GlobalSyncStatus } from '../common/GlobalSyncStatus.js';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -351,6 +351,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
           {/* Right: Quick Icons & Profile */}
           <div className="flex items-center gap-2">
+            {/* Global Connection & Sync Status Indicator */}
+            <GlobalSyncStatus />
+
             {/* Guide Button */}
             <button
               onClick={onOpenOnboarding}
@@ -619,9 +622,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
         )}
       </AnimatePresence>
-
-      {/* Global Offline Indicator & Sync Queue */}
-      <OfflineIndicator />
     </div>
   );
 };

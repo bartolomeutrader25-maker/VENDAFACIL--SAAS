@@ -34,18 +34,20 @@ import {
   HardDrive,
   FileJson,
   Check,
-  Cloud
+  Cloud,
+  Activity
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
 import { signInWithGoogleForDrive, uploadBackupToGoogleDrive } from '../lib/googleDriveService.js';
+import { SystemStatusMonitor } from '../components/superadmin/SystemStatusMonitor.js';
 
 export const SuperAdminPage: React.FC = () => {
   const { user, switchCompany } = useAuth();
   const { error, success } = useToast();
 
-  const [activeTab, setActiveTab] = useState<'companies' | 'notifications' | 'backup' | 'settings'>('companies');
+  const [activeTab, setActiveTab] = useState<'companies' | 'notifications' | 'backup' | 'status' | 'settings'>('companies');
   const [companies, setCompanies] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -339,8 +341,21 @@ export const SuperAdminPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setActiveTab('status')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
+              activeTab === 'status'
+                ? 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-600/20'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-emerald-400'
+            }`}
+            title="Abrir painel de status Firebase, rede e Service Worker"
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>Status do Sistema & Offline</span>
+          </button>
+
+          <button
             onClick={loadAll}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 transition"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 transition cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Atualizar Dados</span>
@@ -438,6 +453,18 @@ export const SuperAdminPage: React.FC = () => {
         >
           <Database className="w-4 h-4" />
           <span>Nuvem & Cópia de Segurança</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('status')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+            activeTab === 'status'
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Activity className="w-4 h-4 text-emerald-400" />
+          <span>Status & Conexões (Firebase/Offline)</span>
         </button>
 
         <button
@@ -1037,7 +1064,12 @@ export const SuperAdminPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: CONFIGURAÇÕES DO SAAS */}
+      {/* TAB 4: DIAGNÓSTICO DO SISTEMA, FIREBASE & SERVICE WORKER */}
+      {activeTab === 'status' && (
+        <SystemStatusMonitor />
+      )}
+
+      {/* TAB 5: CONFIGURAÇÕES DO SAAS */}
       {activeTab === 'settings' && (
         <form onSubmit={handleSaveSettings} className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-2xs space-y-6">
           <div>

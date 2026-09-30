@@ -68,6 +68,20 @@ export const api = {
     imageBase64?: string;
     imageMimeType?: string;
   }) => apiRequest('/products/ai-extract', { method: 'POST', body: JSON.stringify(data) }),
+  generateProductImageAi: (data: {
+    prompt: string;
+    mode?: 'create' | 'edit';
+    sourceImageBase64?: string;
+    aspectRatio?: '1:1' | '3:4' | '4:3' | '16:9' | '9:16';
+    productContext?: { name?: string; category?: string; description?: string };
+    productId?: string;
+  }) => apiRequest<{
+    success: boolean;
+    imageUrl: string;
+    text?: string;
+    promptUsed: string;
+    updatedProduct?: any;
+  }>('/products/ai-image', { method: 'POST', body: JSON.stringify(data) }),
 
   getCategories: () => apiRequest('/categories'),
   createCategory: (body: any) => apiRequest('/categories', { method: 'POST', body: JSON.stringify(body) }),
