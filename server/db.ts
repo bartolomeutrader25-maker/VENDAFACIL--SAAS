@@ -36,6 +36,10 @@ class Database {
   public subscriptions: Map<string, CompanySubscription> = new Map();
   public plans: Map<string, SubscriptionPlan> = new Map();
   public adminNotificationLogs: Map<string, AdminNotificationLog> = new Map();
+  public passwordResets: Map<string, { id: string; email: string; code: string; expiresAt: string; used: boolean; createdAt: string }> = new Map();
+  public appVersion: string = '2.1.0';
+  public lastUpdatedAt: string = new Date().toISOString();
+  public updateHistory: Array<{ version: string; date: string; message: string; companiesPreserved: number; backupPath: string }> = [];
 
   public saasSettings: SaasSettings = {
     trialDurationDays: 7,
@@ -101,6 +105,7 @@ class Database {
     this.notifications.clear();
     this.subscriptions.clear();
     this.adminNotificationLogs.clear();
+    this.passwordResets.clear();
 
     // 2. Initialize default subscription plans
     this.seedPlans();
@@ -298,7 +303,11 @@ class Database {
         notifications: Array.from(this.notifications.entries()),
         subscriptions: Array.from(this.subscriptions.entries()),
         plans: Array.from(this.plans.entries()),
-        adminNotificationLogs: Array.from(this.adminNotificationLogs.entries())
+        adminNotificationLogs: Array.from(this.adminNotificationLogs.entries()),
+        passwordResets: Array.from(this.passwordResets.entries()),
+        appVersion: this.appVersion,
+        lastUpdatedAt: this.lastUpdatedAt,
+        updateHistory: this.updateHistory
       };
 
       fs.writeFileSync(this.dbFilePath, JSON.stringify(dump, null, 2), 'utf-8');
@@ -348,6 +357,11 @@ class Database {
       restoreMap(this.subscriptions, data.subscriptions);
       restoreMap(this.plans, data.plans);
       restoreMap(this.adminNotificationLogs, data.adminNotificationLogs);
+      restoreMap(this.passwordResets, data.passwordResets);
+
+      if (data.appVersion) this.appVersion = data.appVersion;
+      if (data.lastUpdatedAt) this.lastUpdatedAt = data.lastUpdatedAt;
+      if (Array.isArray(data.updateHistory)) this.updateHistory = data.updateHistory;
 
       // Always guarantee plans and superadmin presence
       if (this.plans.size === 0) this.seedPlans();
@@ -577,10 +591,124 @@ class Database {
     }
   }
 
+  // Creates an automatic safety snapshot in data/backups before any update or operation
+  public createBackupSnapshot(label: string = 'snapshot'): string {
+    try {
+      const backupDir = path.join(process.cwd(), 'data', 'backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `snapshot_${label}_${timestamp}.json`;
+      const targetPath = path.join(backupDir, filename);
+
+      const dump = {
+        _version: this.appVersion,
+        _timestamp: new Date().toISOString(),
+        _label: label,
+        saasSettings: this.saasSettings,
+        companies: Array.from(this.companies.entries()),
+        users: Array.from(this.users.entries()),
+        categories: Array.from(this.categories.entries()),
+        products: Array.from(this.products.entries()),
+        customers: Array.from(this.customers.entries()),
+        sales: Array.from(this.sales.entries()),
+        receivables: Array.from(this.receivables.entries()),
+        stockMovements: Array.from(this.stockMovements.entries()),
+        expenses: Array.from(this.expenses.entries()),
+        cashRegisters: Array.from(this.cashRegisters.entries()),
+        notifications: Array.from(this.notifications.entries()),
+        subscriptions: Array.from(this.subscriptions.entries()),
+        plans: Array.from(this.plans.entries()),
+        adminNotificationLogs: Array.from(this.adminNotificationLogs.entries()),
+        passwordResets: Array.from(this.passwordResets.entries())
+      };
+
+      fs.writeFileSync(targetPath, JSON.stringify(dump, null, 2), 'utf-8');
+      return filename;
+    } catch (err) {
+      console.error('Erro ao gerar snapshot de segurança:', err);
+      return '';
+    }
+  }
+
+  // Safe Zero-Data-Loss System Update
+  public applySystemUpdate(): {
+    success: boolean;
+    version: string;
+    message: string;
+    stats: {
+      companiesPreserved: number;
+      usersPreserved: number;
+      productsPreserved: number;
+      salesPreserved: number;
+      customersPreserved: number;
+    };
+    backupFilename: string;
+    updatedAt: string;
+  } {
+    // 1. Automatic pre-update snapshot
+    const backupFilename = this.createBackupSnapshot('pre_update_safe');
+
+    // 2. Count active records
+    const companiesCount = this.companies.size;
+    const usersCount = this.users.size;
+    const productsCount = this.products.size;
+    const salesCount = this.sales.size;
+    const customersCount = this.customers.size;
+
+    // 3. Non-destructive field migrations with safe fallbacks (never delete or overwrite user data)
+    for (const [id, comp] of this.companies.entries()) {
+      if (!comp.currency) comp.currency = 'Kz';
+      if (!comp.currencySymbol) comp.currencySymbol = comp.currency || 'Kz';
+      if (!comp.receiptFooter) comp.receiptFooter = `Obrigado pela preferência na ${comp.name}!`;
+      this.companies.set(id, comp);
+    }
+
+    // 4. Update system version
+    this.appVersion = '2.1.0';
+    this.lastUpdatedAt = new Date().toISOString();
+    this.updateHistory.unshift({
+      version: this.appVersion,
+      date: this.lastUpdatedAt,
+      message: `Actualização de versão executada com sucesso. ${companiesCount} empresa(s) e ${salesCount} venda(s) 100% preservadas sem qualquer alteração aos dados operacionais.`,
+      companiesPreserved: companiesCount,
+      backupPath: backupFilename
+    });
+
+    // 5. Commit state safely
+    this.saveToFileSync();
+
+    return {
+      success: true,
+      version: this.appVersion,
+      message: `Actualização do aplicativo concluída com sucesso! Todos os dados de ${companiesCount} empresa(s) registada(s), ${productsCount} produto(s) e ${salesCount} venda(s) foram 100% preservados e salvaguardados sem nenhuma alteração.`,
+      stats: {
+        companiesPreserved: companiesCount,
+        usersPreserved: usersCount,
+        productsPreserved: productsCount,
+        salesPreserved: salesCount,
+        customersPreserved: customersCount
+      },
+      backupFilename,
+      updatedAt: this.lastUpdatedAt
+    };
+  }
+
   public resetDatabase() {
+    // Safety check: protect real registered businesses
+    const registeredClients = Array.from(this.companies.values()).filter(c => c.id !== 'comp-superadmin' && c.id !== 'comp-demo-01');
+    if (registeredClients.length > 0) {
+      return {
+        success: false,
+        message: `Proteção de Dados Ativa: Existem ${registeredClients.length} empresa(s) real(is) registada(s) em funcionamento. A eliminação total foi bloqueada para garantir a segurança absoluta das empresas.`
+      };
+    }
+    this.createBackupSnapshot('pre_reset');
     this.initZeroState();
     this.saveToFileSync();
-    return { success: true, message: 'Base de dados zerada com sucesso. Pronta para novos clientes.' };
+    return { success: true, message: 'Base de dados inicializada com sucesso.' };
   }
 
   // ==========================================

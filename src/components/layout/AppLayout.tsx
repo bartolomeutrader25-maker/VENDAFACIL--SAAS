@@ -32,6 +32,7 @@ import { api } from '../../lib/api.js';
 import { TrialBanner } from '../TrialBanner.js';
 import { PWAInstallButton } from '../common/PWAInstallButton.js';
 import { GlobalSyncStatus } from '../common/GlobalSyncStatus.js';
+import { SystemUpdateModal } from '../common/SystemUpdateModal.js';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const [isUserSwitcherOpen, setIsUserSwitcherOpen] = useState(false);
   const [demoUsers, setDemoUsers] = useState<any[]>([]);
   const [isResettingDemo, setIsResettingDemo] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
   const currentRoute = currentPage || activeRoute || 'dashboard';
 
@@ -295,20 +297,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
           <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
             <button
-              onClick={handleLoadDemoUsers}
-              className="text-[11px] text-emerald-700 hover:underline font-medium"
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="text-[11px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+              title="Actualizar aplicativo sem perda de dados das empresas"
             >
-              Trocar Perfil Demo
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Actualizar App</span>
             </button>
-            <button
-              onClick={handleResetDemoData}
-              disabled={isResettingDemo}
-              className="text-[11px] text-slate-400 hover:text-slate-700 flex items-center gap-1"
-              title="Restaurar dados demo"
-            >
-              <RefreshCw className={`w-3 h-3 ${isResettingDemo ? 'animate-spin' : ''}`} />
-              <span>Reset</span>
-            </button>
+            <span className="text-[10px] text-slate-400 font-mono font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+              v2.1.0
+            </span>
           </div>
         </div>
       </aside>
@@ -353,6 +351,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           <div className="flex items-center gap-2">
             {/* Global Connection & Sync Status Indicator */}
             <GlobalSyncStatus />
+
+            {/* System Update Button with Zero-Data-Loss badge */}
+            <button
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-bold bg-white text-slate-700 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 px-2.5 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Actualização do Aplicativo (Zero Perda de Dados)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+              <span className="hidden sm:inline">Actualizar App</span>
+            </button>
 
             {/* Guide Button */}
             <button
@@ -622,6 +630,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* System Update & Zero-Data-Loss Protection Modal */}
+      <SystemUpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+      />
     </div>
   );
 };

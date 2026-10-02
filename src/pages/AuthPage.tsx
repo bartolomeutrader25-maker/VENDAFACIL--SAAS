@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Building2, Mail, Lock, Phone, User, Store, ArrowRight, ShieldCheck, CheckCircle2, X, Sparkles, ChevronRight } from 'lucide-react';
+import { Building2, Mail, Lock, Phone, User, Store, ArrowRight, ShieldCheck, CheckCircle2, X, Sparkles, ChevronRight, KeyRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
+import { PasswordRecoveryModal } from '../components/common/PasswordRecoveryModal.js';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'register';
@@ -11,6 +12,7 @@ interface AuthPageProps {
 export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onBackToLanding }) => {
   const { login, loginWithGoogle, register, isLoading } = useAuth();
   const [tab, setTab] = useState<'login' | 'register'>(initialMode);
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
 
   // Google Modal State
   const [showGoogleModal, setShowGoogleModal] = useState(false);
@@ -182,6 +184,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onBac
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[10px] text-slate-500">
+                    Acesso encriptado
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowRecoveryModal(true)}
+                    className="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                  >
+                    Esqueceu a palavra-passe?
+                  </button>
+                </div>
+
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -344,6 +359,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onBac
                   <span>{isLoading ? 'A criar empresa...' : 'Criar Conta e Iniciar Grátis'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
+
+                <p className="text-center text-[11px] text-slate-400 mt-2">
+                  Já possui conta criada?{' '}
+                  <button
+                    type="button"
+                    onClick={() => setTab('login')}
+                    className="text-emerald-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Entrar
+                  </button>
+                  {' • '}
+                  <button
+                    type="button"
+                    onClick={() => setShowRecoveryModal(true)}
+                    className="text-slate-400 hover:text-emerald-400 transition cursor-pointer"
+                  >
+                    Recuperar senha
+                  </button>
+                </p>
               </form>
             </div>
           )}
@@ -502,6 +536,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onBac
           </div>
         </div>
       )}
+
+      {/* Password Recovery Modal */}
+      <PasswordRecoveryModal
+        isOpen={showRecoveryModal}
+        onClose={() => setShowRecoveryModal(false)}
+        initialEmail={loginEmail || regEmail}
+        onSuccessReset={(recoveredEmail) => {
+          setLoginEmail(recoveredEmail);
+          setTab('login');
+        }}
+      />
     </div>
   );
 };

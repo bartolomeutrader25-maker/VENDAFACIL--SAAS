@@ -43,6 +43,8 @@ export const api = {
   login: (body: any) => apiRequest('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   loginWithGoogle: (body: { email: string; name?: string; avatar?: string; googleId?: string; companyName?: string; businessType?: string }) =>
     apiRequest('/auth/google', { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword: (email: string) => apiRequest<{ success: boolean; message: string; code?: string; email: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (body: { email: string; code: string; newPassword: string }) => apiRequest<{ success: boolean; message: string }>('/auth/reset-password', { method: 'POST', body: JSON.stringify(body) }),
   getMe: () => apiRequest('/auth/me'),
   getDemoUsers: () => apiRequest('/auth/demo-users'),
 
@@ -159,6 +161,37 @@ export const api = {
   getAdminSettings: () => apiRequest('/admin/settings'),
   updateAdminSettings: (data: any) => apiRequest('/admin/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // System Updates & Zero Data Loss
+  getSystemVersion: () => apiRequest<{
+    version: string;
+    lastUpdatedAt: string;
+    integrityStatus: string;
+    dataProtectionActive: boolean;
+    stats: {
+      companiesCount: number;
+      usersCount: number;
+      productsCount: number;
+      salesCount: number;
+      customersCount: number;
+    };
+    updateHistory: any[];
+  }>('/system/version'),
+  applySystemUpdate: () => apiRequest<{
+    success: boolean;
+    version: string;
+    message: string;
+    stats: {
+      companiesPreserved: number;
+      usersPreserved: number;
+      productsPreserved: number;
+      salesPreserved: number;
+      customersPreserved: number;
+    };
+    backupFilename: string;
+    updatedAt: string;
+  }>('/system/update', { method: 'POST' }),
+  getSystemSnapshots: () => apiRequest<Array<{ filename: string; size: number; createdAt: string }>>('/system/snapshots'),
+
   // Demo Reset
-  resetDemoData: () => apiRequest('/admin/reset-data', { method: 'POST' }),
+  resetDemoData: () => apiRequest('/demo/reset', { method: 'POST' }),
 };

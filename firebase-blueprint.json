@@ -1,0 +1,169 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Perfil do utilizador da plataforma VendaFácil SaaS",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID único do utilizador"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome completo do utilizador",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail de acesso"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Telefone ou WhatsApp de contacto",
+          "maxLength": 30
+        },
+        "role": {
+          "type": "string",
+          "enum": ["proprietario", "gerente", "vendedor", "caixa"],
+          "description": "Papel hierárquico na empresa"
+        },
+        "companyId": {
+          "type": "string",
+          "description": "ID da empresa à qual o utilizador pertence"
+        },
+        "companyName": {
+          "type": "string",
+          "description": "Nome da empresa"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Se o utilizador está activo"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de criação da conta"
+        },
+        "isSuperAdmin": {
+          "type": "boolean",
+          "description": "Se possui privilégios de super-administrador SaaS"
+        }
+      },
+      "required": ["id", "name", "email", "companyId", "role", "createdAt"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Dados da empresa/loja registada",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID da empresa"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome da empresa",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "businessType": {
+          "type": "string",
+          "description": "Ramo ou sector de actividade"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail da empresa"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Telefone da empresa"
+        },
+        "nif": {
+          "type": "string",
+          "description": "Número de Identificação Fiscal (NIF/NIPC)",
+          "maxLength": 30
+        },
+        "currency": {
+          "type": "string",
+          "description": "Moeda de operação (ex: Kz, €, $)"
+        },
+        "plan": {
+          "type": "string",
+          "description": "Plano subscrito (ex: basic, pro, enterprise)"
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Nome do proprietário"
+        },
+        "trialActive": {
+          "type": "boolean",
+          "description": "Se o período de avaliação está activo"
+        },
+        "trialStartDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trialEndDate": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "name", "email", "createdAt"]
+    },
+    "PasswordResetRequest": {
+      "title": "PasswordResetRequest",
+      "description": "Solicitação de recuperação ou redefinição de palavra-passe",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID da solicitação"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail associado à conta"
+        },
+        "code": {
+          "type": "string",
+          "description": "Código de verificação ou token"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "verified", "used", "expired"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "email", "code", "createdAt", "expiresAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Perfis de utilizador registados"
+    },
+    "/companies/{companyId}": {
+      "schema": "Company",
+      "description": "Empresas registadas no sistema"
+    },
+    "/passwordResets/{resetId}": {
+      "schema": "PasswordResetRequest",
+      "description": "Pedidos de recuperação de senha"
+    }
+  }
+}

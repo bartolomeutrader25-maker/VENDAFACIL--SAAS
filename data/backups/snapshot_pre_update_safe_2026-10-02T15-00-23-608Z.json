@@ -1,0 +1,226 @@
+{
+  "_version": "2.1.0",
+  "_timestamp": "2026-10-02T15:00:23.608Z",
+  "_label": "pre_update_safe",
+  "saasSettings": {
+    "trialDurationDays": 7,
+    "basicPlanPrice": 5000,
+    "proPlanPrice": 10000,
+    "premiumPlanPrice": 30000,
+    "planPrices": {
+      "basic": 5000,
+      "pro": 10000,
+      "premium": 30000
+    },
+    "adminEmail": "bartolomeutrader25@gmail.com",
+    "adminPhone": "+244972911640",
+    "multicaixaPhone": "972 911 640 / 947 050 586",
+    "bankIban": "0040 0000 1472 2403 1016 5",
+    "accountHolder": "BARTOLOMEU SUNDA CONDE MAVUNGO"
+  },
+  "companies": [
+    [
+      "comp-superadmin",
+      {
+        "id": "comp-superadmin",
+        "name": "VendaFácil Global SaaS",
+        "nif": "5000999888LA001",
+        "phone": "+244 972 911 640",
+        "whatsapp": "+244 972 911 640",
+        "email": "bartolomeutrader25@gmail.com",
+        "address": "Luanda, Angola",
+        "businessType": "Plataforma SaaS & Gestão Comercial",
+        "currency": "Kz",
+        "currencySymbol": "Kz",
+        "receiptFooter": "VendaFácil SaaS - O Software de Gestão Comercial Líder em Angola",
+        "createdAt": "2026-10-02T14:15:27.311Z",
+        "planId": "premium",
+        "plan": "premium",
+        "selectedPlan": "premium",
+        "ownerName": "Bartolomeu Conde",
+        "subscriptionStatus": "active",
+        "trialActive": false
+      }
+    ]
+  ],
+  "users": [
+    [
+      "usr-bartolomeu-superadmin",
+      {
+        "id": "usr-bartolomeu-superadmin",
+        "name": "Bartolomeu Conde",
+        "email": "bartolomeutrader25@gmail.com",
+        "phone": "+244 972 911 640",
+        "role": "proprietario",
+        "companyId": "comp-superadmin",
+        "companyName": "VendaFácil Global SaaS",
+        "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80",
+        "isActive": true,
+        "createdAt": "2026-10-02T14:15:27.311Z",
+        "passwordHash": "admin123",
+        "isSuperAdmin": true
+      }
+    ],
+    [
+      "usr-superadmin",
+      {
+        "id": "usr-superadmin",
+        "name": "Super Admin VendaFácil",
+        "email": "admin@vendafacil.co.ao",
+        "phone": "+244 972 911 640",
+        "role": "proprietario",
+        "companyId": "comp-superadmin",
+        "companyName": "VendaFácil Global SaaS",
+        "avatarUrl": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80",
+        "isActive": true,
+        "createdAt": "2026-10-02T14:15:27.311Z",
+        "passwordHash": "admin123",
+        "isSuperAdmin": true
+      }
+    ]
+  ],
+  "categories": [],
+  "products": [],
+  "customers": [],
+  "sales": [],
+  "receivables": [],
+  "stockMovements": [],
+  "expenses": [],
+  "cashRegisters": [],
+  "notifications": [
+    [
+      "notif-reset-1790951641806",
+      {
+        "id": "notif-reset-1790951641806",
+        "companyId": "comp-superadmin",
+        "title": "🔑 Solicitação de Recuperação de Palavra-passe",
+        "message": "Código de recuperação gerado para bartolomeutrader25@gmail.com: 352210 (válido por 15 minutos).",
+        "type": "warning",
+        "isRead": false,
+        "link": "/login",
+        "createdAt": "2026-10-02T14:34:01.806Z"
+      }
+    ]
+  ],
+  "subscriptions": [],
+  "plans": [
+    [
+      "free",
+      {
+        "id": "free",
+        "name": "Teste Gratuito (7 Dias)",
+        "price": 0,
+        "billingPeriod": "mensal",
+        "hasAi": false,
+        "hasFiado": true,
+        "hasAdvancedReports": false,
+        "hasMultiStore": false,
+        "features": [
+          "7 dias de acesso total",
+          "Até 50 produtos cadastrados",
+          "Até 100 vendas no período",
+          "Gestão de estoque básica",
+          "1 Utilizador",
+          "Relatórios resumidos",
+          "Suporte via WhatsApp"
+        ],
+        "salesLimit": 100,
+        "productsLimit": 50,
+        "usersLimit": 1
+      }
+    ],
+    [
+      "basic",
+      {
+        "id": "basic",
+        "name": "Plano Básico",
+        "price": 5000,
+        "billingPeriod": "mensal",
+        "hasAi": false,
+        "hasFiado": true,
+        "hasAdvancedReports": false,
+        "hasMultiStore": false,
+        "features": [
+          "Vendas ilimitadas",
+          "Até 300 produtos cadastrados",
+          "2 Utilizadores (Operador + Gerente)",
+          "Gestão de estoque com alertas",
+          "Emissão de faturas/recibos térmicos e A4",
+          "Controle de caixa diário (abertura/fecho)",
+          "Gestão de clientes e fiados",
+          "Relatórios de vendas e lucros",
+          "Suporte prioritário via WhatsApp"
+        ],
+        "salesLimit": null,
+        "productsLimit": 300,
+        "usersLimit": 2
+      }
+    ],
+    [
+      "pro",
+      {
+        "id": "pro",
+        "name": "Plano Pro (Mais Popular)",
+        "price": 10000,
+        "billingPeriod": "mensal",
+        "hasAi": true,
+        "hasFiado": true,
+        "hasAdvancedReports": true,
+        "hasMultiStore": false,
+        "features": [
+          "Tudo do Plano Básico",
+          "Produtos ilimitados",
+          "Até 5 Utilizadores com permissões por perfil",
+          "Assistente de IA Comercial (Gemini Flash)",
+          "Controle avançado de fiados com lembretes WhatsApp",
+          "Gestão de despesas e lucros líquidos",
+          "Histórico completo de movimentações de estoque",
+          "Múltiplas formas de pagamento (TPA, Cash, Express, Fiado)",
+          "Backup automático diário dos dados",
+          "Suporte VIP via WhatsApp"
+        ],
+        "salesLimit": null,
+        "productsLimit": null,
+        "usersLimit": 5
+      }
+    ],
+    [
+      "premium",
+      {
+        "id": "premium",
+        "name": "Plano Premium / Armazém",
+        "price": 30000,
+        "billingPeriod": "mensal",
+        "hasAi": true,
+        "hasFiado": true,
+        "hasAdvancedReports": true,
+        "hasMultiStore": true,
+        "features": [
+          "Tudo do Plano Pro",
+          "Utilizadores ilimitados",
+          "Multi-caixas em simultâneo",
+          "Gestão multi-lojas / filiais",
+          "Relatórios fiscais detalhados",
+          "Atendimento dedicado 24/7"
+        ],
+        "salesLimit": null,
+        "productsLimit": null,
+        "usersLimit": null
+      }
+    ]
+  ],
+  "adminNotificationLogs": [],
+  "passwordResets": [
+    [
+      "reset-1790951641806-xd90f",
+      {
+        "id": "reset-1790951641806-xd90f",
+        "email": "bartolomeutrader25@gmail.com",
+        "code": "352210",
+        "expiresAt": "2026-10-02T14:49:01.806Z",
+        "used": true,
+        "createdAt": "2026-10-02T14:34:01.806Z"
+      }
+    ]
+  ]
+}

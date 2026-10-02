@@ -17,7 +17,8 @@ import {
   Package,
   FileText,
   SlidersHorizontal,
-  Info
+  Info,
+  Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Category } from '../types/index.js';
@@ -239,6 +240,41 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
       streamRef.current = null;
     }
     setIsCameraActive(false);
+  };
+
+  const captureScreen = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      error('Captura de ecrã não suportada diretamente neste navegador.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+
+      await new Promise((r) => setTimeout(r, 350));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setCapturedImage(dataUrl);
+        success('Captura de ecrã concluída! Clique em "Analisar com IA" para preencher os dados do produto.');
+      }
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (err: any) {
+      console.warn('Captura de ecrã cancelada ou erro:', err);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -563,6 +599,15 @@ export const AiAudioProductRegistrationModal: React.FC<AiAudioProductRegistratio
                     >
                       <Camera className="w-4 h-4" />
                       <span>{capturedImage ? 'Tirar Nova Foto' : 'Abrir Câmara'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={captureScreen}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-800 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                      title="Capturar produto ou fatura exibida no ecrã do computador"
+                    >
+                      <Monitor className="w-3.5 h-3.5 text-cyan-600" />
+                      <span>Capturar Ecrã</span>
                     </button>
                     <button
                       type="button"

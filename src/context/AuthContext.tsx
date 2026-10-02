@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { User, Company, SubscriptionStatus } from '../types/index.js';
 import { api } from '../lib/api.js';
 import { useToast } from './ToastContext.js';
+import { firestore, testFirestoreConnection } from '../firebaseConfig.js';
+import { doc, setDoc } from 'firebase/firestore';
 
 export interface CompanyAccessState {
   allowed: boolean;
@@ -84,6 +86,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     loadCurrentUser();
+    // Test connection to Firestore on initialization as recommended by Firebase guidelines
+    testFirestoreConnection().catch((err) => {
+      console.warn('Conexão inicial Firestore:', err);
+    });
   }, [loadCurrentUser]);
 
   const login = async (email: string, pass: string): Promise<boolean> => {
@@ -146,6 +152,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('vf_company_id', res.company.id);
       setIsOnboardingCompleted(false);
       localStorage.removeItem('vf_onboarding_done');
+
+      // Persist complete registration data in Firestore database
+      try {
+        if (res.user?.id) {
+          await setDoc(
+            doc(firestore, 'users', res.user.id),
+            {
+              id: res.user.id,
+              name: res.user.name || data.name,
+              email: res.user.email || data.email,
+              phone: res.user.phone || data.phone || '',
+              role: res.user.role || 'proprietario',
+              companyId: res.company?.id || '',
+              companyName: res.company?.name || data.companyName,
+              isActive: true,
+              createdAt: res.user.createdAt || new Date().toISOString(),
+              isSuperAdmin: res.user.isSuperAdmin || false,
+            },
+            { merge: true }
+          );
+        }
+
+        if (res.company?.id) {
+          await setDoc(
+            doc(firestore, 'companies', res.company.id),
+            {
+              id: res.company.id,
+              name: res.company.name || data.companyName,
+              businessType: res.company.businessType || data.businessType || 'Comércio Geral',
+              email: res.company.email || data.email,
+              phone: res.company.phone || data.phone || '',
+              nif: res.company.nif || data.nif || '',
+              currency: res.company.currency || data.currency || 'Kz',
+              plan: res.company.planId || data.selectedPlan || 'pro',
+              ownerName: res.company.ownerName || data.name,
+              trialActive: true,
+              trialStartDate: res.trial?.startDate || new Date().toISOString(),
+              trialEndDate: res.trial?.endDate || new Date(Date.now() + 7 * 86400000).toISOString(),
+              createdAt: res.company.createdAt || new Date().toISOString(),
+            },
+            { merge: true }
+          );
+        }
+      } catch (fsErr) {
+        console.warn('Firestore registration sync notice:', fsErr);
+      }
+
       success(`🎉 Empresa ${res.company.name} criada com sucesso com ${res.trial?.daysRemaining || 7} dias de teste gratuito!`);
       return true;
     } catch (err: any) {

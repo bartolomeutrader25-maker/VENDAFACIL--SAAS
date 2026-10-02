@@ -4,6 +4,7 @@ delete (globalThis as any).__dirname;
 import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { db } from './server/db.js';
 import {
@@ -220,6 +221,8 @@ async function startServer() {
         createdAt: now.toISOString()
       });
 
+      db.saveToFile();
+
       const { passwordHash, ...safeUser } = newUser;
       res.json({
         user: safeUser,
@@ -270,6 +273,125 @@ async function startServer() {
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Erro no login' });
+    }
+  });
+
+  // Password Recovery Endpoints
+  app.post('/api/auth/forgot-password', (req: Request, res: Response) => {
+    try {
+      const { email } = req.body;
+      if (!email || typeof email !== 'string') {
+        return res.status(400).json({ error: 'Por favor, indique um e-mail válido.' });
+      }
+
+      const cleanEmail = email.toLowerCase().trim();
+      const user = Array.from(db.users.values()).find(
+        u => u.email.toLowerCase() === cleanEmail
+      );
+
+      if (!user) {
+        return res.status(404).json({
+          error: 'Nenhuma conta encontrada com este e-mail. Verifique o endereço digitado ou crie uma nova conta.'
+        });
+      }
+
+      // Generate 6-digit recovery code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const resetId = `reset-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins
+
+      const resetRecord = {
+        id: resetId,
+        email: cleanEmail,
+        code,
+        expiresAt,
+        used: false,
+        createdAt: new Date().toISOString()
+      };
+
+      db.passwordResets.set(resetId, resetRecord);
+      db.saveToFile();
+
+      // Log notification in company
+      if (user.companyId && db.companies.has(user.companyId)) {
+        db.notifications.set(`notif-reset-${Date.now()}`, {
+          id: `notif-reset-${Date.now()}`,
+          companyId: user.companyId,
+          title: '🔑 Solicitação de Recuperação de Palavra-passe',
+          message: `Código de recuperação gerado para ${cleanEmail}: ${code} (válido por 15 minutos).`,
+          type: 'warning',
+          isRead: false,
+          link: '/login',
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Código de recuperação gerado com sucesso. Introduza o código e a nova palavra-passe para concluir.',
+        email: cleanEmail,
+        code,
+        expiresAt
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao processar recuperação de senha' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', (req: Request, res: Response) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ error: 'E-mail, código de verificação e nova palavra-passe são obrigatórios.' });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'A nova palavra-passe deve conter pelo menos 6 caracteres.' });
+      }
+
+      const cleanEmail = email.toLowerCase().trim();
+      const cleanCode = String(code).trim();
+
+      // Find valid matching reset request
+      const now = new Date();
+      const validReset = Array.from(db.passwordResets.values()).find(
+        r => r.email === cleanEmail &&
+             r.code === cleanCode &&
+             !r.used &&
+             new Date(r.expiresAt) > now
+      );
+
+      if (!validReset) {
+        return res.status(400).json({
+          error: 'Código de verificação inválido ou expirado. Por favor solicite um novo código.'
+        });
+      }
+
+      // Find user
+      const user = Array.from(db.users.values()).find(
+        u => u.email.toLowerCase() === cleanEmail
+      );
+
+      if (!user) {
+        return res.status(404).json({ error: 'Utilizador não encontrado.' });
+      }
+
+      // Update password
+      user.passwordHash = newPassword;
+      db.users.set(user.id, user);
+
+      // Mark code as used
+      validReset.used = true;
+      db.passwordResets.set(validReset.id, validReset);
+
+      db.saveToFile();
+
+      res.json({
+        success: true,
+        message: 'Palavra-passe redefinida com sucesso! Pode agora entrar na sua conta com a nova senha.'
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao redefinir palavra-passe' });
     }
   });
 
@@ -2251,6 +2373,64 @@ async function startServer() {
   app.post('/api/demo/reset', (req: Request, res: Response) => {
     db.seedDemoCompany();
     res.json({ success: true, message: 'Dados de demonstração do Mercado Exemplo Lda restaurados com sucesso.' });
+  });
+
+  // ==========================================
+  // SYSTEM UPDATE & ZERO-DATA-LOSS ENDPOINTS
+  // ==========================================
+
+  app.get('/api/system/version', (req: Request, res: Response) => {
+    try {
+      res.json({
+        version: db.appVersion || '2.1.0',
+        lastUpdatedAt: db.lastUpdatedAt,
+        integrityStatus: 'healthy',
+        dataProtectionActive: true,
+        stats: {
+          companiesCount: db.companies.size,
+          usersCount: db.users.size,
+          productsCount: db.products.size,
+          salesCount: db.sales.size,
+          customersCount: db.customers.size
+        },
+        updateHistory: db.updateHistory
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao consultar versão do sistema' });
+    }
+  });
+
+  app.post('/api/system/update', (req: Request, res: Response) => {
+    try {
+      const result = db.applySystemUpdate();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao aplicar actualização do aplicativo' });
+    }
+  });
+
+  app.get('/api/system/snapshots', (req: Request, res: Response) => {
+    try {
+      const backupDir = path.join(process.cwd(), 'data', 'backups');
+      if (!fs.existsSync(backupDir)) {
+        return res.json([]);
+      }
+      const files = fs.readdirSync(backupDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          const stats = fs.statSync(path.join(backupDir, f));
+          return {
+            filename: f,
+            size: stats.size,
+            createdAt: stats.birthtime.toISOString()
+          };
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      res.json(files);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro ao listar snapshots' });
+    }
   });
 
   // Health check

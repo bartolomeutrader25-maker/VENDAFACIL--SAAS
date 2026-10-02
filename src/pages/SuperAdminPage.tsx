@@ -42,6 +42,7 @@ import { useAuth } from '../context/AuthContext.js';
 import { useToast } from '../context/ToastContext.js';
 import { signInWithGoogleForDrive, uploadBackupToGoogleDrive } from '../lib/googleDriveService.js';
 import { SystemStatusMonitor } from '../components/superadmin/SystemStatusMonitor.js';
+import { SystemUpdateModal } from '../components/common/SystemUpdateModal.js';
 
 export const SuperAdminPage: React.FC = () => {
   const { user, switchCompany } = useAuth();
@@ -76,6 +77,7 @@ export const SuperAdminPage: React.FC = () => {
   const [backupFile, setBackupFile] = useState<File | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
 
   // Create Company State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -888,15 +890,25 @@ export const SuperAdminPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsUpdateModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition flex items-center gap-2 cursor-pointer active:scale-95"
+                  title="Actualizar aplicativo sem alterar nenhum dado das empresas"
+                >
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                  <span>Actualizar Aplicativo (Zero-Perda)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleExportBackup}
                   disabled={isExporting}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isExporting ? 'A exportar...' : 'Exportar Cópia de Segurança'}</span>
+                  <span>{isExporting ? 'A exportar...' : 'Exportar Cópia'}</span>
                 </button>
               </div>
             </div>
@@ -1038,27 +1050,54 @@ export const SuperAdminPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Card: Actualização do Aplicativo & Proteção de Dados das Empresas */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-emerald-50 p-6 rounded-3xl border border-emerald-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <h4 className="font-extrabold text-sm sm:text-base text-emerald-950">
+                  Actualização de Versão Segura (Zero Perda de Dados)
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-200 text-emerald-900 border border-emerald-300">
+                  Proteção Ativa
+                </span>
+              </div>
+              <p className="text-xs text-emerald-800/90 max-w-2xl leading-relaxed">
+                Atualize o software para aplicar novas funcionalidades e otimizações. O sistema gera uma cópia de segurança prévia automática e <strong>garante que nenhuma empresa, catálogo, cliente ou venda é modificada ou perdida</strong>.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsUpdateModalOpen(true)}
+              className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 cursor-pointer shrink-0 active:scale-95"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Actualizar Aplicativo</span>
+            </button>
+          </div>
+
           {/* Card 3: Limpeza de Dados / Manter Zerado */}
-          <div className="bg-rose-50/40 p-5 rounded-3xl border border-rose-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 opacity-75">
             <div>
               <div className="flex items-center gap-2">
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                <h4 className="font-bold text-sm text-rose-950">
-                  Zerar e Limpar Todos os Dados da Plataforma
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <h4 className="font-bold text-sm text-slate-800">
+                  Proteção de Dados das Empresas Ativa
                 </h4>
               </div>
-              <p className="text-xs text-rose-800/80 mt-1 max-w-2xl leading-relaxed">
-                Esta ação apaga quaisquer empresas, produtos ou vendas criadas durante fases de teste, deixando a aplicação 100% limpa e pronta para novos clientes. A sua conta de Super Administrador não será removida.
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                O modo de segurança permanente está ativo. Quaisquer reinicializações preservam obrigatoriamente as empresas reais registadas no sistema.
               </p>
             </div>
             <button
               type="button"
               onClick={handleResetData}
               disabled={isProcessing}
-              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow transition flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+              className="px-3.5 py-2 rounded-xl bg-slate-200 hover:bg-rose-100 text-slate-600 hover:text-rose-700 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Zerar Base de Dados Agora</span>
+              <span>Limpeza Apenas de Demos</span>
             </button>
           </div>
         </div>
@@ -1691,6 +1730,12 @@ export const SuperAdminPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* System Update & Zero Data Loss Modal */}
+      <SystemUpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+      />
     </div>
   );
 };
