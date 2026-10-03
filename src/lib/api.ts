@@ -143,6 +143,30 @@ export const api = {
 
   // AI Assistant
   askAi: (message: string, chatHistory: any[] = []) => apiRequest('/ai/chat', { method: 'POST', body: JSON.stringify({ message, chatHistory }) }),
+  scanProductWithCamera: (data: {
+    imagesBase64?: string[];
+    imageBase64?: string;
+    primaryImageIndex?: number;
+    existingCategories?: string[];
+  }) =>
+    apiRequest<{
+      success: boolean;
+      data: {
+        name: string;
+        dosagePresentation: string;
+        categoryName: string;
+        batchNumber: string;
+        manufacturingDate: string;
+        expirationDate: string;
+        barcode: string;
+        sellingPrice: number;
+        costPrice: number;
+        unit: string;
+        confidenceNotes: string;
+        imageUrl: string;
+        allImages?: string[];
+      };
+    }>('/ai/scan-product-camera', { method: 'POST', body: JSON.stringify(data) }),
 
   // Super Admin
   getAdminMetrics: () => apiRequest('/admin/metrics'),

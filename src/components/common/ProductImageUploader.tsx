@@ -1,14 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Sparkles, Camera, Wand2, Monitor } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Upload, Link as LinkIcon, Trash2, Image as ImageIcon, Sparkles, Camera, Wand2, Scan } from 'lucide-react';
 import { ProductThumbnail } from './ProductThumbnail.js';
 import { ProductImageAiStudioModal } from './ProductImageAiStudioModal.js';
-import { ScreenCaptureModal } from './ScreenCaptureModal.js';
+import { ProductCameraScannerModal, ScannedProductData } from './ProductCameraScannerModal.js';
 
 interface ProductImageUploaderProps {
   imageUrl: string;
   onChange: (url: string) => void;
   productName: string;
   categoryName?: string;
+  onScanData?: (data: ScannedProductData) => void;
+  existingCategories?: string[];
 }
 
 const SAMPLE_IMAGES = [
@@ -50,85 +52,16 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
   onChange,
   productName,
   categoryName,
+  onScanData,
+  existingCategories = [],
 }) => {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [showSampleGallery, setShowSampleGallery] = useState(false);
   const [isAiStudioOpen, setIsAiStudioOpen] = useState(false);
-  const [rawScreenCapture, setRawScreenCapture] = useState('');
-  const [isScreenCaptureModalOpen, setIsScreenCaptureModalOpen] = useState(false);
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
   const [urlDraft, setUrlDraft] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Listen for clipboard paste (Ctrl+V screenshot / printscreen)
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const blob = items[i].getAsFile();
-          if (blob) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-              if (event.target?.result) {
-                setRawScreenCapture(event.target.result as string);
-                setIsScreenCaptureModalOpen(true);
-              }
-            };
-            reader.readAsDataURL(blob);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, []);
-
-  // Screen capture via getDisplayMedia
-  const handleScreenCapture = async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      alert('A captura de ecrã não é suportada diretamente por este navegador. Pode utilizar a tecla PrintScreen e colar com Ctrl+V.');
-      return;
-    }
-
-    try {
-      setIsProcessing(true);
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      });
-
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.muted = true;
-      await video.play();
-
-      // Wait 350ms for initial video frame
-      await new Promise((resolve) => setTimeout(resolve, 350));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        stream.getTracks().forEach((t) => t.stop());
-
-        setRawScreenCapture(dataUrl);
-        setIsScreenCaptureModalOpen(true);
-      } else {
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    } catch (err: any) {
-      console.warn('Captura de ecrã cancelada ou erro:', err);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   // Compress image client-side to keep base64 ultra lightweight
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,12 +174,12 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
             <button
               type="button"
               disabled={isProcessing}
-              onClick={handleScreenCapture}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 border border-cyan-300 text-cyan-800 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-              title="Capturar imagem da tela/ecrã, janela ou aba do navegador (ou cole com Ctrl+V)"
+              onClick={() => setIsCameraScannerOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Scanner de Dados com Câmera: extrai nome, tipo, lote, fabricação, validade, código de barras e foto"
             >
-              <Monitor className="w-3.5 h-3.5 text-cyan-600" />
-              <span>Captura de Ecrã</span>
+              <Scan className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
+              <span>Scanner com Câmera</span>
             </button>
 
             <button
@@ -363,12 +296,19 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
         categoryName={categoryName}
       />
 
-      {/* Screen Capture & Crop Modal */}
-      <ScreenCaptureModal
-        isOpen={isScreenCaptureModalOpen}
-        imageSrc={rawScreenCapture}
-        onClose={() => setIsScreenCaptureModalOpen(false)}
-        onApply={(croppedUrl) => onChange(croppedUrl)}
+      {/* Scanner de Dados com Câmera */}
+      <ProductCameraScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        existingCategories={existingCategories}
+        onApply={(data) => {
+          if (data.imageUrl) {
+            onChange(data.imageUrl);
+          }
+          if (onScanData) {
+            onScanData(data);
+          }
+        }}
       />
     </div>
   );

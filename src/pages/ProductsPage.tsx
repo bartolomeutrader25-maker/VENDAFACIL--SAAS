@@ -88,6 +88,7 @@ export const ProductsPage: React.FC = () => {
   const [manufacturingDate, setManufacturingDate] = useState<string>('');
   const [barcode, setBarcode] = useState('');
   const [unit, setUnit] = useState('un');
+  const [description, setDescription] = useState('');
 
   const curr = company?.currency || 'Kz';
 
@@ -132,6 +133,7 @@ export const ProductsPage: React.FC = () => {
     setManufacturingDate('');
     setBarcode('');
     setUnit('un');
+    setDescription('');
     if (categories.length > 0) setCategoryId(categories[0].id);
     setIsModalOpen(true);
   };
@@ -140,6 +142,7 @@ export const ProductsPage: React.FC = () => {
     setEditingProduct(p);
     setIsDuplicating(false);
     setName(p.name);
+    setDescription(p.description || '');
     setImageUrl(p.imageUrl || '');
     setCategoryId(p.categoryId || '');
     setCostPrice(p.costPrice);
@@ -158,6 +161,7 @@ export const ProductsPage: React.FC = () => {
     setEditingProduct(null);
     setIsDuplicating(true);
     setName(`${p.name} (Cópia)`);
+    setDescription(p.description || '');
     setImageUrl(p.imageUrl || '');
     setCategoryId(p.categoryId || '');
     setCostPrice(p.costPrice);
@@ -201,6 +205,7 @@ export const ProductsPage: React.FC = () => {
         manufacturingDate: manufacturingDate ? manufacturingDate.trim() : undefined,
         barcode: barcode.trim() || undefined,
         unit,
+        description: description.trim() || undefined,
       };
 
       if (editingProduct) {
@@ -779,6 +784,30 @@ export const ProductsPage: React.FC = () => {
                   onChange={setImageUrl}
                   productName={name}
                   categoryName={categories.find((c) => c.id === categoryId)?.name}
+                  existingCategories={categories.map((c) => c.name)}
+                  onScanData={(scanned) => {
+                    if (scanned.name) setName(scanned.name);
+                    if (scanned.dosagePresentation) setDescription(scanned.dosagePresentation);
+                    if (scanned.categoryName) {
+                      const matched = categories.find(
+                        (c) =>
+                          c.name.toLowerCase().includes(scanned.categoryName.toLowerCase()) ||
+                          scanned.categoryName.toLowerCase().includes(c.name.toLowerCase())
+                      );
+                      if (matched) {
+                        setCategoryId(matched.id);
+                      }
+                    }
+                    if (scanned.batchNumber) setBatchNumber(scanned.batchNumber);
+                    if (scanned.manufacturingDate) setManufacturingDate(scanned.manufacturingDate);
+                    if (scanned.expirationDate) setExpirationDate(scanned.expirationDate);
+                    if (scanned.barcode) setBarcode(scanned.barcode);
+                    if (scanned.sellingPrice > 0) setSellingPrice(scanned.sellingPrice);
+                    if (scanned.costPrice > 0) setCostPrice(scanned.costPrice);
+                    if (scanned.unit) setUnit(scanned.unit);
+                    if (scanned.imageUrl) setImageUrl(scanned.imageUrl);
+                    success('✨ Dados consolidados com sucesso: nome, apresentação farmacológica, lote, validade e código de barras!');
+                  }}
                 />
 
                 <div>
@@ -789,6 +818,19 @@ export const ProductsPage: React.FC = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Ex: Arroz 1kg Tio Lucas, Corte Degradê, Paracetamol..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Apresentação Farmacológica / Formato (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Ex: Caixa com 20 Comprimidos de 500mg, Frasco Xarope 120ml..."
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-900 font-medium focus:outline-none focus:border-emerald-500"
                   />
                 </div>

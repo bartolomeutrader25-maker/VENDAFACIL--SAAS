@@ -631,4 +631,150 @@ export async function generateOrEditProductImage(
   };
 }
 
+export interface CameraProductScanResult {
+  name: string;
+  dosagePresentation: string;
+  categoryName: string;
+  batchNumber: string;
+  manufacturingDate: string;
+  expirationDate: string;
+  barcode: string;
+  sellingPrice: number;
+  costPrice: number;
+  unit: string;
+  confidenceNotes: string;
+}
+
+export async function scanProductPackageWithCamera(params: {
+  imagesBase64?: string[];
+  imageBase64?: string;
+  existingCategories?: string[];
+}): Promise<CameraProductScanResult> {
+  const images = (params.imagesBase64 && params.imagesBase64.length > 0)
+    ? params.imagesBase64
+    : params.imageBase64
+    ? [params.imageBase64]
+    : [];
+
+  const { existingCategories = [] } = params;
+  const ai = getAiClient();
+
+  if (!ai || images.length === 0) {
+    return {
+      name: 'Produto Identificado',
+      dosagePresentation: '',
+      categoryName: existingCategories[0] || 'Geral',
+      batchNumber: '',
+      manufacturingDate: '',
+      expirationDate: '',
+      barcode: '',
+      sellingPrice: 0,
+      costPrice: 0,
+      unit: 'un',
+      confidenceNotes: 'A análise IA necessita de fotografias válidas e conexão com a API Gemini.'
+    };
+  }
+
+  const promptText = `
+Você é o scanner de visão computacional, farmacêutico e OCR de inventário do sistema VendaFácil SaaS.
+O utilizador forneceu ${images.length} fotografia(s) da embalagem, frasco, caixa, rótulo ou etiqueta do mesmo produto (por exemplo: foto da frente com nome comercial e dosagem/apresentação farmacológica, foto da lateral/topo com carimbo de lote e datas, e foto do código de barras ou verso com informações técnicas).
+
+Sua tarefa é analisar detalhadamente e CONSOLIDAR as informações de TODAS as fotos fornecidas, extraindo com máxima precisão:
+
+1. "name": Nome comercial claro e bem formatado do produto (ex: "Paracetamol 500mg", "Amoxicilina 500mg", "Ibuprofeno 400mg", "Água Mineral Pura 1.5L", "Arroz Tio Lucas 1kg"). Se for medicamento, cosmético ou produto de marca, mantenha a identificação precisa.
+2. "dosagePresentation": Apresentação farmacológica / forma farmacêutica e dosagem (ex: "Caixa com 20 Comprimidos de 500mg", "Xarope 120ml com copo medidor", "Pomada dermatológica 30g", "Cápsulas 250mg", "Solução Injetável 5ml", "Frasco 100ml"). Se não for medicamento, informe a especificação/formato da embalagem.
+3. "categoryName": Categoria / Tipo de produto (ex: "Farmácia & Medicamentos", "Bebidas", "Mercearia", "Higiene & Cosméticos", "Limpeza"). Categorias existentes na loja: [${existingCategories.join(', ')}]. Escolha a mais adequada.
+4. "batchNumber": Número do LOTE de fabricação (inspecione minuciosamente carimbos pretos, relevo ou matriz de pontos na caixa, abas ou rótulo: procure por "LOTE", "LOT", "L.", "BATCH", "B/N", "B.", "L240901", etc.). Deixe em branco "" se não for encontrado.
+5. "manufacturingDate": Data de fabricação / fabrico (procure por "FAB:", "MFG:", "PROD:", "FABRICAÇÃO:", datas DD/MM/AAAA ou AAAA/MM/DD). Formate rigorosamente como "YYYY-MM-DD". Deixe em branco "" se não existir.
+6. "expirationDate": Data de vencimento / validade (procure por "VAL:", "EXP:", "VALIDADE:", "VENC:", "USE BY:", "BEST BEFORE:"). Formate rigorosamente como "YYYY-MM-DD". Deixe em branco "" se não existir.
+7. "barcode": Código de barras (EAN-13, EAN-8, UPC, Code 128) legível em qualquer uma das fotos (extraia os dígitos impressos sob ou ao lado das barras). Deixe em branco "" se não existir.
+8. "sellingPrice": Preço de venda se houver etiqueta colada na embalagem (apenas número limpo em Kwanzas). Se não houver, retorne 0.
+9. "costPrice": Preço de custo se indicado. Se não, retorne 0.
+10. "unit": Unidade ("un", "cx", "pct", "kg", "lt"). Se for caixa de comprimidos ou xarope, use "cx" ou "un".
+11. "confidenceNotes": Resumo em português explicando claramente o que foi detectado em cada uma das ${images.length} fotos (ex: "Foto 1: Nome e apresentação farmacológica identificados; Foto 2: Lote e Data de Validade lidos com precisão; Foto 3: Código de barras extraído com sucesso.").
+
+Retorne ESTRITAMENTE um objeto JSON no seguinte formato:
+{
+  "name": string,
+  "dosagePresentation": string,
+  "categoryName": string,
+  "batchNumber": string,
+  "manufacturingDate": string,
+  "expirationDate": string,
+  "barcode": string,
+  "sellingPrice": number,
+  "costPrice": number,
+  "unit": string,
+  "confidenceNotes": string
+}
+`;
+
+  const parts: any[] = [{ text: promptText }];
+
+  images.forEach((img, idx) => {
+    const cleanImg = img.replace(/^data:image\/[a-z0-9-+.]+;base64,/, '');
+    const mimeType = img.match(/^data:(image\/[a-z0-9-+.]+);base64,/)?.[1] || 'image/jpeg';
+    parts.push({
+      text: `--- FOTOGRAFIA ${idx + 1} DE ${images.length} ---`,
+    });
+    parts.push({
+      inlineData: {
+        mimeType,
+        data: cleanImg,
+      },
+    });
+  });
+
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  for (const model of candidateModels) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: { parts },
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.1,
+        },
+      });
+
+      if (response.text) {
+        const parsed = JSON.parse(response.text.trim());
+        return {
+          name: parsed.name || 'Produto Identificado',
+          dosagePresentation: parsed.dosagePresentation || '',
+          categoryName: parsed.categoryName || existingCategories[0] || 'Geral',
+          batchNumber: parsed.batchNumber || '',
+          manufacturingDate: parsed.manufacturingDate || '',
+          expirationDate: parsed.expirationDate || '',
+          barcode: parsed.barcode || '',
+          sellingPrice: Number(parsed.sellingPrice) || 0,
+          costPrice: Number(parsed.costPrice) || 0,
+          unit: parsed.unit || 'un',
+          confidenceNotes: parsed.confidenceNotes || 'Dados consolidados com sucesso a partir das fotos com IA.'
+        };
+      }
+    } catch (err: any) {
+      console.warn(`[CameraScanner] Falha no modelo ${model}:`, err?.message || err);
+      if (isTransientOrDemandError(err)) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+    }
+  }
+
+  return {
+    name: 'Produto Identificado',
+    dosagePresentation: '',
+    categoryName: existingCategories[0] || 'Geral',
+    batchNumber: '',
+    manufacturingDate: '',
+    expirationDate: '',
+    barcode: '',
+    sellingPrice: 0,
+    costPrice: 0,
+    unit: 'un',
+    confidenceNotes: 'Não foi possível ler todos os dados com clareza. Ajuste a iluminação e enquadramento.'
+  };
+}
+
 

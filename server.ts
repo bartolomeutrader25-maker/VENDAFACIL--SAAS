@@ -12,7 +12,8 @@ import {
   BusinessDataSummary,
   extractProductFromAudioAndImage,
   extractHeuristicallyFromTranscript,
-  generateOrEditProductImage
+  generateOrEditProductImage,
+  scanProductPackageWithCamera
 } from './server/gemini.js';
 import {
   Product,
@@ -749,6 +750,50 @@ async function startServer() {
       console.error('[AI Product Image] Erro ao gerar imagem:', err);
       res.status(500).json({
         error: err?.message || 'Falha ao processar imagem com a IA. Verifique as configurações da API Gemini.',
+      });
+    }
+  });
+
+  // Scanner de Produto com Câmera Multi-Foto (Extração de Nome, Apresentação Farmacológica, Categoria, Lote, Fabrico, Validade, Código de Barras e Foto)
+  app.post('/api/ai/scan-product-camera', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { imagesBase64, imageBase64, primaryImageIndex = 0, existingCategories } = req.body;
+
+      const images: string[] = Array.isArray(imagesBase64) && imagesBase64.length > 0
+        ? imagesBase64
+        : (imageBase64 && typeof imageBase64 === 'string')
+        ? [imageBase64]
+        : [];
+
+      if (images.length === 0) {
+        return res.status(400).json({ error: 'Pelo menos uma foto capturada pela câmera é obrigatória.' });
+      }
+
+      // Fetch company categories if not supplied
+      let categories = existingCategories;
+      if (!categories || !categories.length) {
+        categories = db.getCompanyCategories(req.companyId!).map(c => c.name);
+      }
+
+      const scanResult = await scanProductPackageWithCamera({
+        imagesBase64: images,
+        existingCategories: categories,
+      });
+
+      const selectedPrimaryImage = images[primaryImageIndex] || images[0];
+
+      res.json({
+        success: true,
+        data: {
+          ...scanResult,
+          imageUrl: selectedPrimaryImage,
+          allImages: images,
+        }
+      });
+    } catch (err: any) {
+      console.error('[AI Camera Scanner] Erro ao analisar fotos da embalagem:', err);
+      res.status(500).json({
+        error: err?.message || 'Falha ao processar as fotos com o scanner inteligente.',
       });
     }
   });
